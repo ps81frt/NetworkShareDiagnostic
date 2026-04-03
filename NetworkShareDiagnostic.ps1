@@ -768,6 +768,33 @@ foreach ($Target in $Neighbors) {
     }
 }
 
+# 18. PARTAGES SMB
+Write-Step "Collecte des partages SMB..."
+
+$Shares = Set-Safe-Get {
+    Get-SmbShare | ForEach-Object {
+        $ShareName = $_.Name
+        $Path      = $_.Path
+
+        $Permissions = Get-SmbShareAccess -Name $ShareName -ErrorAction SilentlyContinue
+
+        $Folders = if (Test-Path $Path) {
+            Get-ChildItem -Path $Path -Directory -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name
+        } else { @() }
+
+        [PSCustomObject]@{
+            Nom        = if ($Mode -eq 'PUBLIC') { ($ShareName.Substring(0,[Math]::Min(3,$ShareName.Length))+'***') } else { $ShareName }
+            Chemin     = $Path
+            Acces      = ($Permissions | ForEach-Object {
+                "$($_.AccountName) ($($_.AccessRight))"
+            }) -join "; "
+            Dossiers   = if ($Folders) { $Folders -join ", " } else { "Aucun / inaccessible" }
+            Risque     = if ($Permissions.AccountName -match 'Everyone') { 'WARN' } else { 'OK' }
+        }
+    }
+} @()
+
 # Fallback si aucun voisin détecté
 if (-not $ConnTests -or $ConnTests.Count -eq 0) {
     $ConnTests = foreach ($Target in $Neighbors) {
@@ -900,6 +927,8 @@ $OutputFile  = Join-Path $OutputPath $FileName
 $SMBSrvHTML  = "<h4>Configuration Serveur SMB</h4>" + (Build-Table -ID 'tbl-smb-srv' -Data $SMBServerItems -Columns @('Parametre','Valeur','Risque','Note'))
 $SMBCliHTML  = "<h4>Configuration Client SMB</h4>"  + (Build-Table -ID 'tbl-smb-cli' -Data $SMBClientItems -Columns @('Parametre','Valeur','Risque','Note'))
 $SMBShrHTML  = "<h4>Partages</h4>"                  + (Build-Table -ID 'tbl-shares'  -Data $SMBShares      -Columns @('Nom','Chemin','Type','Description','Permissions','ABE','Cache_HS','MaxUtilisateurs','Disponibilite'))
+$SMBShrHTML2 = "<h4>Partages SMB</h4>" + 
+              (Build-Table -ID 'tbl-shares' -Data $Shares -Columns @('Nom','Chemin','Acces','Dossiers','Risque') -RiskColumn 'Risque')
 $SMBSesHTML  = "<h4>Sessions actives</h4>"           + (Build-Table -ID 'tbl-sessions'-Data $SMBSessions    -Columns @('Client','Utilisateur','Dialecte','Signe','Chiffre','Duree_s'))
 $SMBConHTML  = "<h4>Connexions actives</h4>"         + (Build-Table -ID 'tbl-conn'    -Data $SMBConnections -Columns @('Serveur','Partage','Utilisateur','Dialecte','Signe','Chiffre'))
 
@@ -1096,8 +1125,9 @@ $(if ($MRUEntries) { Build-Table -ID 'tbl-mru' -Data $MRUEntries -Columns @('Sou
 
 $(Build-Section 'history' 'Historique des connexions reseau' '🕐' ($HistHTML + $NetUseHTML + $PersHTML) "$(@($ConnHistory).Count) evenement(s)")
 
-$(Build-Section 'smb' 'Configuration SMB' '📁' ($SMBSrvHTML + $SMBCliHTML + $SMBShrHTML + $SMBSesHTML + $SMBConHTML) "$(@($SMBShares).Count) partage(s)")
+$(Build-Section 'smb' 'Configuration SMB' '📁' ($SMBSrvHTML + $SMBCliHTML + $SMBShrHTML + $SMBSesHTML + $SMBConHTML) "$(@($Shares).Count) partage(s)")
 
+$(Build-Section 'shares' 'Partages SMB' '📂' ($SMBShrHTML2) "$(@($Shares).Count) partage(s)")
 $(Build-Section 'firewall' 'Pare-feu Windows' '🔥' @"
 <h4>Profils</h4>
 $(Build-Table -ID 'tbl-fw-profiles' -Data $FWProfiles -Columns @('Profil','Active','EntreeDefaut','SortieDefaut','LogAutorise','LogBloque','Risque'))
