@@ -46,9 +46,8 @@ $WarningPreference     = 'SilentlyContinue'
 # ─────────────────────────────────────────────────────────────────────────────
 # REGION: VÉRIFICATION VERSION PS
 # ─────────────────────────────────────────────────────────────────────────────
-$PSVersionMajor = $PSVersionTable.PSVersion.Major
-$PSVersionFull  = $PSVersionTable.PSVersion.ToString()
-if ($PSVersionMajor -lt 5) {
+$PSVersionFull  = $PSVersionTable.PSVersion
+if ($PSVersionFull.Major -lt 5 -or ($PSVersionFull.Major -eq 5 -and $PSVersionFull.Minor -lt 1)) {
     Write-Host "[CRITIQUE] PowerShell 5.1 minimum requis. Version actuelle : $PSVersionFull" -ForegroundColor Red
     exit 1
 }
@@ -1090,7 +1089,7 @@ h4:first-child{margin-top:0}
 
 <div class="filter-bar">
   <span style="color:var(--muted);font-size:12px;padding:5px 4px">Filtrer :</span>
-  <button class="filter-btn active" onclick="filterSections('all',this)">Tout afficher</button>
+  <button class="filter-btn active" onclick="document.querySelectorAll('.data-table tbody tr').forEach(r => r.style.display='');">Tout afficher</button>
   <button class="filter-btn f-critical" onclick="filterSections('critical',this)">❌ Critiques</button>
   <button class="filter-btn f-warn" onclick="filterSections('warn',this)">⚠️ Avertissements</button>
   <button class="filter-btn f-ok" onclick="filterSections('ok',this)">✅ OK</button>
