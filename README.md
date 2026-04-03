@@ -7,7 +7,7 @@
 **Effet sur le système :** lecture seule — aucune écriture registre, aucune modification de service, aucune création de règle réseau  
 
 ---
-
+![auditreseau-NSD](./pic/auditreseau.gif)
 ## Table des matières
 
 1. [Résumé technique](#1-résumé-technique)
