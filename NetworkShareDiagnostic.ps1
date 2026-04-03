@@ -27,6 +27,8 @@
     - Droits élevés recommandés pour accès complet (fonctionne en mode dégradé sinon)
     - Compatible : PowerShell 5.1 / 7.x — Windows 10/11 Pro/Entreprise
     - Rapport HTML entièrement en français
+    - Erreur possible nom de chemin trop long corrigé en modifiant la clé un redémarrage sera requis pour la prise en compte:
+    reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
 #>
 
 [CmdletBinding()]
