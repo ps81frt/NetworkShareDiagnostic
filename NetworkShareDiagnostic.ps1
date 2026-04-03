@@ -379,7 +379,9 @@ try {
 
     if (-not $SMBClientConfig) {
         Write-Host "  [AVERT.] Registre LanmanWorkstation inaccessible ou LongPathsEnabled non actif." -ForegroundColor Yellow
-        Write-Host "           Relancer en Administrateur et vérifier : reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f" -ForegroundColor DarkYellow
+        Write-Host "           Relancer en Administrateur et vérifier :" -ForegroundColor DarkYellow
+        Write-Host "           reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f" -ForegroundColor DarkYellow
+        Write-Host "           ⚠️ Un redémarrage peut être nécessaire pour que la modification soit effective." -ForegroundColor DarkYellow
     }
 }
 
