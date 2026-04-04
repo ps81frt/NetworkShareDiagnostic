@@ -1321,6 +1321,7 @@ Unblock-File -Path .\NetworkShareDiagnostic.ps1
 # Lancer le script
 .\NetworkShareDiagnostic.ps1 -Mode COMPLET
 ```
+![auditreseau-NSD](./pic/unblock.png)
 
 ### `Get-SmbServerConfiguration` échoue même en admin
 
