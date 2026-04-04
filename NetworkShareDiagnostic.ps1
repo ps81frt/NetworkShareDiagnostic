@@ -27,8 +27,6 @@
     - Droits élevés recommandés pour accès complet (fonctionne en mode dégradé sinon)
     - Compatible : PowerShell 5.1 / 7.x — Windows 10/11 Pro/Entreprise
     - Rapport HTML entièrement en français
-    - Erreur possible nom de chemin trop long corrigé en modifiant la clé un redémarrage sera requis pour la prise en compte:
-    reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
 #>
 
 [CmdletBinding()]
@@ -64,7 +62,7 @@ $banner = @"
 ║          Auteur  : ps81frt                                       ║
 ║          Licence : MIT                                           ║
 ║          GitHub  : github.com/ps81frt/NetworkShareDiagnostic     ║
-║          PS      : $PSVersionFull $(if($PSVersionMajor -ge 7){'(Core) ✓'}else{'(Windows) ✓'})
+║          PS      : $PSVersionFull $(if($PSVersionFull.Major -ge 7){'(Core) ✓'}else{'(Windows) ✓'})
 ╚══════════════════════════════════════════════════════════════════╝
 "@
 Write-Host $banner -ForegroundColor Cyan
@@ -392,7 +390,7 @@ $SMBClientItems = if ($SMBClientConfig) {
         [PSCustomObject]@{ Parametre='Signature requise (Client)';  Valeur=if($SMBClientConfig.RequireSecuritySignature){'Requise'}else{'Non requise'}; Risque=if($SMBClientConfig.RequireSecuritySignature){'OK'}else{'WARN'}; Note="Application cote client$sourceNote" }
         [PSCustomObject]@{ Parametre='Signature activee (Client)';  Valeur=if($SMBClientConfig.EnableSecuritySignature){'Activee'}else{'Desactivee'}; Risque=if($SMBClientConfig.EnableSecuritySignature){'OK'}else{'WARN'}; Note=$sourceNote.Trim() }
         [PSCustomObject]@{ Parametre='Protocole Max (Client)';      Valeur=Set-Safe-String $SMBClientConfig.MaxProtocol 'N/A';      Risque='INFO'; Note='' }
-        [PSCustomObject]@{ Parametre='Protocole Min (Client)';      Valeur=Set-Safe-String $SMBClientConfig.MinProtocol 'N/A';      Risque=if((Set-Safe-String $SMBClientConfig.MinProtocol 'N/A') -eq 'SMB1'){'CRITICAL'}else{'OK'}; Note='' }
+        [PSCustomObject]@{ Parametre='Protocole Min (Client)';      Valeur=Set-Safe-reString $SMBClientConfig.MinProtocol 'N/A';      Risque=if((Set-Safe-String $SMBClientConfig.MinProtocol 'N/A') -eq 'SMB1'){'CRITICAL'}else{'OK'}; Note='' }
         [PSCustomObject]@{ Parametre='Delai session (s)';           Valeur=Set-Safe-String $SMBClientConfig.SessionTimeout 'N/A';   Risque='INFO'; Note='' }
         [PSCustomObject]@{ Parametre='Duree cache repertoire (s)';  Valeur=Set-Safe-String $SMBClientConfig.DirectoryCacheLifetime 'N/A'; Risque='INFO'; Note='' }
         [PSCustomObject]@{ Parametre='Cache entrees fichier (s)';   Valeur=Set-Safe-String $SMBClientConfig.FileInfoCacheLifetime 'N/A'; Risque='INFO'; Note='' }
@@ -815,49 +813,103 @@ if (-not $ConnTests -or $ConnTests.Count -eq 0) {
 Write-Step "Analyse des resultats et generation des recommandations..."
 $Findings = @()
 
+# SMBv1 SERVEUR
 if ($SMBv1Server) {
-    $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Protocole SMB'; Constat='SMBv1 est ACTIVE'; Detail='SMBv1 obsolete et vulnerable (EternalBlue/MS17-010). Desactiver immediatement.'; Correction='Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force' }
+    $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Protocole SMB'; Constat='SMBv1 est ACTIVE (serveur)'; Detail='SMBv1 obsolete et vulnerable (EternalBlue/MS17-010). Desactiver immediatement.'; Correction='Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force' }
 }
+
+# SMBv2 SERVEUR
 if (-not $SMBv2Server) {
-    $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Protocole SMB'; Constat='SMBv2 est DESACTIVE'; Detail='SMBv2/v3 doit etre active pour le partage Windows moderne.'; Correction='Set-SmbServerConfiguration -EnableSMB2Protocol $true -Force' }
+    $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Protocole SMB'; Constat='SMBv2 est DESACTIVE (serveur)'; Detail='SMBv2/v3 doit etre active pour le partage Windows moderne.'; Correction='Set-SmbServerConfiguration -EnableSMB2Protocol $true -Force' }
 }
+
+# SMBv1 CLIENT
+if ($SMBClientConfig -and "$($SMBClientConfig.MinProtocol)" -eq 'SMB1') {
+    $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Protocole SMB'; Constat='SMBv1 autorise cote CLIENT'; Detail='Le client SMB accepte SMB1. Risque identique cote serveur.'; Correction='Set-SmbClientConfiguration -MinimumProtocol SMB2 -Force' }
+}
+
+# PROFIL RESEAU PUBLIC
 foreach ($P in $NetProfiles) {
     if ($P.Profil -eq 'Public') {
         $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Profil reseau'; Constat="Interface '$($P.Interface)' sur profil PUBLIC"; Detail='Le profil Public bloque le partage de fichiers. Passer en Prive.'; Correction="Set-NetConnectionProfile -InterfaceAlias '$($P.Interface)' -NetworkCategory Private" }
     }
 }
-if ($LmLevel -ne 'NON DÉFINI' -and [int]$LmLevel -lt 3) {
-    $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Authentification'; Constat="LmCompatibilityLevel = $LmLevel (trop bas)"; Detail='Authentification LM/NTLMv1 autorisee. Risque majeur de vol de credentials.'; Correction='Set-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 5' }
+
+# LmCompatibilityLevel
+if ($LmLevel -eq 'NON DÉFINI') {
+    $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Authentification'; Constat='LmCompatibilityLevel absent du registre'; Detail='Valeur par defaut differente entre W10 et W11, peut causer des echecs de partage reseau entre machines mixtes.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 3 -Type DWord' }
+} elseif ([int]$LmLevel -lt 3) {
+    $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Authentification'; Constat="LmCompatibilityLevel = $LmLevel (trop bas)"; Detail='Authentification LM/NTLMv1 autorisee. Risque majeur de vol de credentials.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 5 -Type DWord' }
 }
+
+# RestrictAnonymous
+if ((Get-RegValue $RegPaths.Lsa 'restrictanonymous') -eq '0') {
+    $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Authentification'; Constat='RestrictAnonymous = 0'; Detail='Enumeration anonyme des partages autorisee.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name restrictanonymous -Value 1 -Type DWord' }
+}
+
+# LocalAccountTokenFilterPolicy
 if ($LATFP -ne '1') {
     $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Authentification'; Constat='LocalAccountTokenFilterPolicy non defini a 1'; Detail='Connexions distantes avec compte local peuvent echouer (restriction UAC distante active).'; Correction='New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWORD -Force' }
 }
+
+# UAC DESACTIVE
+if ((Get-RegValue $RegPaths.Policies 'EnableLUA') -eq '0') {
+    $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Authentification'; Constat='UAC desactive (EnableLUA=0)'; Detail='Controle de compte utilisateur desactive. Risque elevation silencieuse de privileges.'; Correction='Set-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name EnableLUA -Value 1' }
+}
+
+# PARE-FEU DESACTIVE
 foreach ($FWP in $FWProfiles) {
     if (-not $FWP.Active) {
         $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Pare-feu'; Constat="Pare-feu DESACTIVE sur le profil : $($FWP.Profil)"; Detail='Pare-feu Windows desactive. Verifier presence pare-feu tiers.'; Correction="Set-NetFirewallProfile -Profile $($FWP.Profil) -Enabled True" }
     }
 }
+
+# SERVICES CRITICAL ARRETES
 foreach ($Svc in $ServicesData) {
     if ($Svc.Statut -ne 'Running' -and $Svc.Risque -eq 'CRITICAL') {
         $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Services'; Constat="Service ARRETE : $($Svc.Libelle)"; Detail="$($Svc.Nom) doit etre actif pour le partage SMB."; Correction="Start-Service -Name $($Svc.Nom)" }
     }
 }
+
+# SERVICES WARN ARRETES
+foreach ($Svc in $ServicesData) {
+    if ($Svc.Statut -ne 'Running' -and $Svc.Risque -eq 'WARN') {
+        $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Services'; Constat="Service arrete : $($Svc.Libelle)"; Detail="$($Svc.Nom) arrete peut degrader la decouverte reseau ou les performances SMB."; Correction="Start-Service -Name $($Svc.Nom)" }
+    }
+}
+
+# SIGNATURE SMB SERVEUR
 if ($SMBServerConfig -and -not $SMBServerConfig.EnableSecuritySignature) {
     $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Securite SMB'; Constat='Signature SMB non activee cote serveur'; Detail='Sans signature, attaques SMB relay (NTLM relay) possibles.'; Correction='Set-SmbServerConfiguration -EnableSecuritySignature $true -Force' }
 }
+
+# COMPTES LOCAUX SANS MOT DE PASSE
 foreach ($Acct in $LocalAccounts) {
     if ($Acct.Active -and $Acct.MdpRequis -eq $false) {
         $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Comptes locaux'; Constat="Compte sans mot de passe requis : $($Acct.Nom)"; Detail='Compte active sans exigence de mot de passe.'; Correction="Set-LocalUser -Name '$($Acct.Nom)' -PasswordRequired `$true" }
     }
 }
+
+# PARTAGES OUVERTS A EVERYONE
+foreach ($Share in $Shares) {
+    if ($Share.Risque -eq 'WARN') {
+        $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Partages'; Constat="Partage accessible a Everyone : $($Share.Nom)"; Detail='Acces non restreint au partage. Tout utilisateur du reseau peut y acceder.'; Correction="Revoir les permissions : Set-SmbShareAccess -Name '$($Share.Nom)'" }
+    }
+}
+
+# LLMNR ACTIVE
 if ($LLMNRVal -ne '0') {
     $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Protocoles decouverte'; Constat='LLMNR est active'; Detail='LLMNR exploitable pour capturer credentials (outil Responder).'; Correction='Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" -Name EnableMulticast -Value 0' }
 }
+
+# CONNECTIVITE
 if ($ConnTests -and $ConnTests.Count -gt 0) {
     $ConnTests | Where-Object { $_.Resultat -eq 'CRITICAL' } | ForEach-Object {
         $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Connectivite'; Constat="Impossible de joindre $($_.Cible)"; Detail="Ping : $($_.Ping) | Port 445 : $($_.Port445) | UNC : $($_.UNC_IPC)"; Correction='Verifier regles pare-feu, profil reseau et service SMB sur la machine cible.' }
     }
 }
+
+# AUCUN PROBLEME
 if ($Findings.Count -eq 0) {
     $Findings += [PSCustomObject]@{ Severite='OK'; Categorie='General'; Constat='Aucun probleme critique detecte'; Detail='Configuration correcte pour le partage de fichiers en reseau local.'; Correction='N/A' }
 }
