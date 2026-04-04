@@ -8,6 +8,41 @@
 
 ---
 ![auditreseau-NSD](./pic/auditreseau.gif)
+
+## Installation
+
+### Méthode 1 — Téléchargement direct
+
+1. Cliquer sur **`NetworkShareDiagnostic.ps1`** dans la liste des fichiers
+2. Cliquer sur **Download raw file**
+3. Placer le fichier dans un dossier de votre choix (ex. `C:\Scripts`)
+
+### Méthode 2 — Git clone
+```powershell
+git clone https://github.com/ps81frt/NetworkShareDiagnostic.git
+cd NetworkShareDiagnostic
+```
+
+### Méthode 3 — PowerShell (téléchargement direct)
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ps81frt/NetworkShareDiagnostic/main/NetworkShareDiagnostic.ps1" `
+    -OutFile "$env:USERPROFILE\Desktop\NetworkShareDiagnostic.ps1"
+```
+
+### Première exécution
+```powershell
+# À exécuter une seule fois (droits administrateur requis)
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Débloquer le fichier téléchargé
+Unblock-File -Path .\NetworkShareDiagnostic.ps1
+
+# Lancer le script
+.\NetworkShareDiagnostic.ps1 -Mode COMPLET
+```
+
+> Aucune dépendance externe. Aucune installation de module requise.
+> 
 ## Table des matières
 
 1. [Résumé technique](#1-résumé-technique)
