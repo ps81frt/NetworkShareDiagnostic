@@ -1312,14 +1312,14 @@ Le script ne requiert pas l'élévation pour démarrer (`[CmdletBinding()]` sans
 ### Execution de scripts désactivée
 
 ```powershell
-# Vérifier la politique
-Get-ExecutionPolicy -List
+# À exécuter une seule fois (droits administrateur requis)
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-# Débloquer ce seul fichier (NTFS Zone.Identifier)
+# Débloquer le fichier téléchargé
 Unblock-File -Path .\NetworkShareDiagnostic.ps1
 
-# Bypass pour la session courante uniquement
-powershell.exe -ExecutionPolicy Bypass -File .\NetworkShareDiagnostic.ps1 -Mode COMPLET
+# Lancer le script
+.\NetworkShareDiagnostic.ps1 -Mode COMPLET
 ```
 
 ### `Get-SmbServerConfiguration` échoue même en admin
