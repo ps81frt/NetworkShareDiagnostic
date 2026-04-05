@@ -1,12 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    NetworkShareDiagnostic - Outil de diagnostic complet Partages Réseau & SMB Windows
+    NetworkShareDiagnostic - Outil de diagnostic complet Partages Reseau & SMB Windows
 
 .DESCRIPTION
-    Diagnostic complet des partages réseau pour Windows 10/11.
+    Diagnostic complet des partages reseau pour Windows 10/11.
     Analyse la configuration SMB (serveur + client), pare-feu, politique d'authentification,
-    connectivité, journaux d'événements, historique des connexions et génère un rapport HTML en français.
+    connectivite, journaux d'evenements, historique des connexions et genere un rapport HTML en francais.
 
 .AUTHOR
     ps81frt
@@ -23,10 +23,10 @@
     https://github.com/ps81frt/NetworkShareDiagnostic
 
 .NOTES
-    - Lecture seule : AUCUNE modification système
-    - Droits élevés recommandés pour accès complet (fonctionne en mode dégradé sinon)
+    - Lecture seule : AUCUNE modification systeme
+    - Droits eleves recommandes pour acces complet (fonctionne en mode degrade sinon)
     - Compatible : PowerShell 5.1 / 7.x — Windows 10/11 Pro/Entreprise
-    - Rapport HTML entièrement en français
+    - Rapport HTML entierement en francais
 #>
 
 [CmdletBinding()]
@@ -44,7 +44,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $WarningPreference     = 'SilentlyContinue'
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REGION: VÉRIFICATION VERSION PS
+# REGION: VERIFICATION VERSION PS
 # ─────────────────────────────────────────────────────────────────────────────
 $PSVersionFull  = $PSVersionTable.PSVersion
 if ($PSVersionFull.Major -lt 5 -or ($PSVersionFull.Major -eq 5 -and $PSVersionFull.Minor -lt 1)) {
@@ -53,7 +53,7 @@ if ($PSVersionFull.Major -lt 5 -or ($PSVersionFull.Major -eq 5 -and $PSVersionFu
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REGION: BANNIÈRE
+# REGION: BANNIERE
 # ─────────────────────────────────────────────────────────────────────────────
 Clear-Host
 $banner = @"
@@ -68,37 +68,37 @@ $banner = @"
 Write-Host $banner -ForegroundColor Cyan
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REGION: VÉRIFICATION ÉLÉVATION
+# REGION: VERIFICATION ELEVATION
 # ─────────────────────────────────────────────────────────────────────────────
 $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $IsAdmin) {
-    Write-Host "[AVERTISSEMENT] Pas exécuté en Administrateur. Certaines données seront indisponibles." -ForegroundColor Yellow
+    Write-Host "[AVERTISSEMENT] Pas execute en Administrateur. Certaines donnees seront indisponibles." -ForegroundColor Yellow
     Write-Host "          Relancer avec : Start-Process powershell -Verb RunAs -ArgumentList '-File $PSCommandPath'" -ForegroundColor Yellow
     Write-Host ""
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REGION: CRÉATION DOSSIER DE SORTIE
+# REGION: CREATION DOSSIER DE SORTIE
 # ─────────────────────────────────────────────────────────────────────────────
 if (-not (Test-Path $OutputPath)) {
     try {
         New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
-        Write-Host "[INFO] Dossier de sortie créé : $OutputPath" -ForegroundColor Green
+        Write-Host "[INFO] Dossier de sortie cree : $OutputPath" -ForegroundColor Green
     } catch {
-        Write-Host "[ERREUR] Impossible de créer '$OutputPath' : $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "         Utilisation du dossier temporaire système : $env:TEMP" -ForegroundColor Yellow
+        Write-Host "[ERREUR] Impossible de creer '$OutputPath' : $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "         Utilisation du dossier temporaire systeme : $env:TEMP" -ForegroundColor Yellow
         $OutputPath = $env:TEMP
     }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REGION: SÉLECTION DU MODE
+# REGION: SELECTION DU MODE
 # ─────────────────────────────────────────────────────────────────────────────
 if (-not $Mode) {
-    Write-Host "Sélectionnez le mode de rapport :" -ForegroundColor White
+    Write-Host "Selectionnez le mode de rapport :" -ForegroundColor White
     Write-Host ""
-    Write-Host "  [1] COMPLET  - Toutes les données affichées (usage personnel/interne)" -ForegroundColor Green
-    Write-Host "  [2] PUBLIC   - Données sensibles masquées (partage externe/support)"   -ForegroundColor Blue
+    Write-Host "  [1] COMPLET  - Toutes les donnees affichees (usage personnel/interne)" -ForegroundColor Green
+    Write-Host "  [2] PUBLIC   - Donnees sensibles masquees (partage externe/support)"   -ForegroundColor Blue
     Write-Host ""
     Write-Host "  [Q] Quitter" -ForegroundColor Gray
     Write-Host ""
@@ -114,8 +114,8 @@ if (-not $Mode) {
 }
 
 Write-Host ""
-Write-Host "[MODE] $Mode sélectionné" -ForegroundColor $(if($Mode -eq 'COMPLET'){'Green'}else{'Cyan'})
-Write-Host "[INFO] Démarrage de la collecte... (lecture seule, aucune modification système)" -ForegroundColor Gray
+Write-Host "[MODE] $Mode selectionne" -ForegroundColor $(if($Mode -eq 'COMPLET'){'Green'}else{'Cyan'})
+Write-Host "[INFO] Demarrage de la collecte... (lecture seule, aucune modification systeme)" -ForegroundColor Gray
 Write-Host ""
 
 $ScriptStartTime = Get-Date
@@ -193,15 +193,15 @@ function HtmlEncode {
 function Get-RegValue {
     param([string]$Path, [string]$Name)
     try { return (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name }
-    catch { return 'NON DÉFINI' }
+    catch { return 'NON DEFINI' }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REGION: COLLECTE DES DONNÉES
+# REGION: COLLECTE DES DONNEES
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 1. IDENTITÉ MACHINE
-Write-Step "Collecte de l'identité machine..."
+# 1. IDENTITE MACHINE
+Write-Step "Collecte de l'identite machine..."
 $OS = Set-Safe-Get { Get-CimInstance Win32_OperatingSystem }
 $CS = Set-Safe-Get { Get-CimInstance Win32_ComputerSystem }
 $Identity = [PSCustomObject]@{
@@ -220,8 +220,8 @@ $Identity = [PSCustomObject]@{
     PSEdition    = $PSVersionTable.PSEdition
 }
 
-# 2. INTERFACES RÉSEAU
-Write-Step "Collecte des interfaces réseau..."
+# 2. INTERFACES RESEAU
+Write-Step "Collecte des interfaces reseau..."
 $NetAdapters   = Set-Safe-Get { Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } } @()
 $NetInterfaces = foreach ($Adapter in $NetAdapters) {
     try {
@@ -253,8 +253,8 @@ $NetInterfaces = foreach ($Adapter in $NetAdapters) {
     }
 }
 
-# 3. PROFILS RÉSEAU
-Write-Step "Collecte des profils réseau..."
+# 3. PROFILS RESEAU
+Write-Step "Collecte des profils reseau..."
 $NetProfiles = Set-Safe-Get {
     Get-NetConnectionProfile | ForEach-Object {
         [PSCustomObject]@{
@@ -273,8 +273,8 @@ $NetProfiles = Set-Safe-Get {
     }
 } @()
 
-# 4. LECTEURS MAPPÉS & HISTORIQUE MRU
-Write-Step "Collecte des lecteurs mappés et historique MRU..."
+# 4. LECTEURS MAPPES & HISTORIQUE MRU
+Write-Step "Collecte des lecteurs mappes et historique MRU..."
 $MappedDrives = Set-Safe-Get {
     Get-PSDrive -PSProvider FileSystem | Where-Object { $_.DisplayRoot -like '\\*' } | ForEach-Object {
         [PSCustomObject]@{
@@ -286,7 +286,7 @@ $MappedDrives = Set-Safe-Get {
     }
 } @()
 
-# Lecteurs réseau persistants depuis HKCU:\Network
+# Lecteurs reseau persistants depuis HKCU:\Network
 $PersistentDrives = Set-Safe-Get {
     $netKey = 'HKCU:\Network'
     if (Test-Path $netKey) {
@@ -378,9 +378,9 @@ try {
 
     if (-not $SMBClientConfig) {
         Write-Host "  [AVERT.] Registre LanmanWorkstation inaccessible ou LongPathsEnabled non actif." -ForegroundColor Yellow
-        Write-Host "           Relancer en Administrateur et vérifier :" -ForegroundColor DarkYellow
+        Write-Host "           Relancer en Administrateur et verifier :" -ForegroundColor DarkYellow
         Write-Host "           reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f" -ForegroundColor DarkYellow
-        Write-Host "           ⚠️ Un redémarrage peut être nécessaire pour que la modification soit effective." -ForegroundColor DarkYellow
+        Write-Host "           ⚠️ Un redemarrage peut etre necessaire pour que la modification soit effective." -ForegroundColor DarkYellow
     }
 }
 
@@ -400,8 +400,8 @@ $SMBClientItems = if ($SMBClientConfig) {
     @([PSCustomObject]@{ Parametre='Erreur'; Valeur='Registre LanmanWorkstation inaccessible ou LongPathsEnabled non actif'; Risque='WARN'; Note='' })
 }
 
-# 7. PARTAGES SMB (paramètres étendus)
-Write-Step "Collecte des partages SMB (paramètres étendus)..."
+# 7. PARTAGES SMB (parametres etendus)
+Write-Step "Collecte des partages SMB (parametres etendus)..."
 $SMBShares = Set-Safe-Get {
     Get-SmbShare | ForEach-Object {
         $sName   = $_.Name
@@ -450,7 +450,82 @@ $SMBConnections = Set-Safe-Get {
     }
 } @()
 
-# 10. HISTORIQUE CONNEXIONS RÉSEAU
+function Set-Parse-UNCPath { # modified
+    param([string]$Path)
+    $result = [PSCustomObject]@{ Serveur='N/A'; Partage='N/A' }
+    if ($Path -match '^\\([^\\]+)\\([^\\]+)') {
+        $result.Serveur = $matches[1]
+        $result.Partage = $matches[2]
+    }
+    return $result
+}
+
+function Get-LocalInterfaceForHost {
+    param([string]$RemoteHost)
+    $info = [PSCustomObject]@{ Interface='N/A'; LocalIP='N/A' }
+    try {
+        $addresses = @()
+        if ($RemoteHost -match '^\d{1,3}(?:\.\d{1,3}){3}$') {
+            $addresses = @($RemoteHost)
+        } else {
+            $addresses = [System.Net.Dns]::GetHostAddresses($RemoteHost) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | ForEach-Object { $_.IPAddressToString }
+        }
+        foreach ($addr in $addresses) {
+            if (-not $addr) { continue }
+            $route = Get-NetRoute -DestinationPrefix "$addr/32" -ErrorAction SilentlyContinue | Sort-Object -Property RouteMetric | Select-Object -First 1
+            if ($route) {
+                $iface = Get-NetIPConfiguration -InterfaceIndex $route.InterfaceIndex -ErrorAction SilentlyContinue
+                if ($iface) {
+                    $info.Interface = Set-Safe-String $iface.InterfaceAlias 'N/A'
+                    $info.LocalIP   = if ($iface.IPv4Address) { $iface.IPv4Address[0].IPAddress } else { 'N/A' }
+                }
+                break
+            }
+        }
+    } catch {
+        # Ignore failures, keep N/A values
+    }
+    return $info
+}
+
+$RemoteSMBShares = @()
+
+$MappedDrives | ForEach-Object {
+    $unc = Set-Parse-UNCPath $_.Cible
+    $RemoteSMBShares += [PSCustomObject]@{
+        Source      = 'Lecteur mappe'
+        Serveur     = $unc.Serveur
+        Partage     = $unc.Partage
+        Cible       = $_.Cible
+        Utilisateur = 'N/A'
+        Type        = 'Lecteur mappe'
+    }
+}
+
+$PersistentDrives | ForEach-Object {
+    $unc = Set-Parse-UNCPath $_.Cible
+    $RemoteSMBShares += [PSCustomObject]@{
+        Source      = 'Lecteur persistant'
+        Serveur     = $unc.Serveur
+        Partage     = $unc.Partage
+        Cible       = $_.Cible
+        Utilisateur = $_.Utilisateur
+        Type        = 'Persistant'
+    }
+}
+
+$SMBConnections | ForEach-Object {
+    $RemoteSMBShares += [PSCustomObject]@{
+        Source      = 'Connexion active'
+        Serveur     = $_.Serveur
+        Partage     = $_.Partage
+        Cible       = "$($_.Serveur)\$($_.Partage)"
+        Utilisateur = $_.Utilisateur
+        Type        = 'Session SMB'
+    }
+}
+
+# 10. HISTORIQUE CONNEXIONS RESEAU
 Write-Step "Collecte de l'historique des connexions reseau (7 derniers jours)..."
 $ConnHistory = @()
 try {
@@ -462,7 +537,7 @@ try {
     } -MaxEvents 150 -ErrorAction Stop
     $ConnHistory = $histEvents | ForEach-Object {
         $msg   = $_.Message
-        $ip    = if ($msg -match '(?:Adresse réseau source|Source Address)\s*:\s*(\S+)') { $matches[1] } else { 'N/A' }
+        $ip    = if ($msg -match '(?:Adresse reseau source|Source Address)\s*:\s*(\S+)') { $matches[1] } else { 'N/A' }
         $share = if ($msg -match '(?:Nom du partage|Share Name)\s*:\s*(\S+)') { $matches[1] } else { 'N/A' }
         $user  = if ($msg -match '(?:Nom du compte|Account Name)\s*:\s*(\S+)') { $matches[1] } else { 'N/A' }
         [PSCustomObject]@{
@@ -488,7 +563,7 @@ try {
     })
 }
 
-# Connexions net use en temps réel
+# Connexions net use en temps reel
 $NetUseRaw     = Set-Safe-Get { & net use 2>$null } @()
 $NetUseEntries = @()
 if ($NetUseRaw) {
@@ -554,7 +629,7 @@ $LmLevel = Get-RegValue $RegPaths.Lsa 'LmCompatibilityLevel'
 $LATFP   = Get-RegValue $RegPaths.Policies 'LocalAccountTokenFilterPolicy'
 
 $AuthPolicy = @(
-    [PSCustomObject]@{ Cle='LmCompatibilityLevel';         Valeur=$LmLevel; Recommande='5'; Risque=if($LmLevel-eq'NON DÉFINI'){'WARN'}elseif([int]$LmLevel-lt 3){'CRITICAL'}elseif([int]$LmLevel-ge 5){'OK'}else{'WARN'}; Note='NTLMv2 uniquement (5=optimal). Valeur basse = capture hash LM/NTLMv1' }
+    [PSCustomObject]@{ Cle='LmCompatibilityLevel';         Valeur=$LmLevel; Recommande='5'; Risque=if($LmLevel-eq'NON DEFINI'){'WARN'}elseif([int]$LmLevel-lt 3){'CRITICAL'}elseif([int]$LmLevel-ge 5){'OK'}else{'WARN'}; Note='NTLMv2 uniquement (5=optimal). Valeur basse = capture hash LM/NTLMv1' }
     [PSCustomObject]@{ Cle='RestrictAnonymous';            Valeur=(Get-RegValue $RegPaths.Lsa 'RestrictAnonymous'); Recommande='1'; Risque=if((Get-RegValue $RegPaths.Lsa 'RestrictAnonymous')-eq'0'){'WARN'}else{'OK'}; Note='Bloque enumeration anonyme partages/comptes' }
     [PSCustomObject]@{ Cle='RestrictAnonymousSAM';         Valeur=(Get-RegValue $RegPaths.Lsa 'RestrictAnonymousSAM'); Recommande='1'; Risque=if((Get-RegValue $RegPaths.Lsa 'RestrictAnonymousSAM')-eq'0'){'WARN'}else{'OK'}; Note='Bloque enumeration anonyme des comptes SAM' }
     [PSCustomObject]@{ Cle='LocalAccountTokenFilterPolicy'; Valeur=$LATFP; Recommande='1 (admin distant)'; Risque=if($LATFP-ne'1'){'WARN'}else{'OK'}; Note='Doit etre 1 pour acces distant avec compte local' }
@@ -566,7 +641,7 @@ $AuthPolicy = @(
 
 $LocalAccounts = Set-Safe-Get {
     Get-LocalUser | ForEach-Object {
-        # Définir un booléen si le compte a un mot de passe
+        # Definir un booleen si le compte a un mot de passe
         $HasPassword = [bool]$_.PasswordLastSet
 
         [PSCustomObject]@{
@@ -592,7 +667,7 @@ $CredEntries = if ($CredmanOutput) {
     }
 } else { @() }
 
-# 13. SERVICES & PROTOCOLES DE DÉCOUVERTE
+# 13. SERVICES & PROTOCOLES DE DECOUVERTE
 Write-Step "Collecte des services et protocoles de decouverte..."
 $CriticalServices = @(
     @{Name='LanmanServer';    Friendly='Serveur SMB (LanmanServer)';             Risk='CRITICAL'}
@@ -626,8 +701,11 @@ $ServicesData = foreach ($Svc in $CriticalServices) {
     }
 }
 
-$LLMNRVal      = Get-RegValue $RegPaths.DNS 'EnableMulticast'
-$NetBIOSAdapters= Set-Safe-Get { Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.TcpipNetbiosOptions -ne $null } } @()
+$DNSClientPath   = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient'
+$DNSClientParent = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT'
+$LLMNRVal        = Get-RegValue $RegPaths.DNS 'EnableMulticast'
+$DNSClientExists = Test-Path $DNSClientPath
+$NetBIOSAdapters = Set-Safe-Get { Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.TcpipNetbiosOptions -ne $null } } @()
 $NetBIOSStatus = ($NetBIOSAdapters | ForEach-Object {
     switch ($_.TcpipNetbiosOptions) { 0{'Par defaut (DHCP)'} 1{'Active'} 2{'Desactive'} }
 }) | Select-Object -Unique
@@ -639,7 +717,7 @@ $DiscoveryItems = @(
     [PSCustomObject]@{ Protocole='WSD (Web Services)'; Etat=if((Set-Safe-Get{(Get-Service FDResPub).Status}'Stopped') -eq 'Running'){'En cours'}else{'Arrete'}; Risque='INFO'; Note='Publication decouverte reseau' }
 )
 
-# 14. JOURNAL D'ÉVÉNEMENTS — 24H
+# 14. JOURNAL D'EVENEMENTS — 24H
 Write-Step "Collecte des evenements (24 dernieres heures)..."
 $EventStart = (Get-Date).AddHours(-24)
 $EventIDs   = @(4625, 4648, 4776, 5140, 5145, 7036, 7045)
@@ -712,7 +790,7 @@ if (Test-Path $HostsPath) {
     } catch { }
 }
 
-# 17. TESTS DE CONNECTIVITÉ
+# 17. TESTS DE CONNECTIVITE
 Write-Step "Execution des tests de connectivite..."
 
 $Neighbors = @()
@@ -742,7 +820,7 @@ foreach ($Target in $Neighbors) {
             }
         }
 
-        # Résultat global
+        # Resultat global
         $Overall = if ($PingResult -and $PortResult -and $UNCResult -eq 'OK') { 'OK' }
                    elseif ($PingResult -and $PortResult) { 'WARN' }
                    elseif ($PingResult) { 'WARN' }
@@ -794,7 +872,7 @@ $Shares = Set-Safe-Get {
     }
 } @()
 
-# Fallback si aucun voisin détecté
+# Fallback si aucun voisin detecte
 if (-not $ConnTests -or $ConnTests.Count -eq 0) {
     $ConnTests = foreach ($Target in $Neighbors) {
         [PSCustomObject]@{
@@ -836,7 +914,7 @@ foreach ($P in $NetProfiles) {
 }
 
 # LmCompatibilityLevel
-if ($LmLevel -eq 'NON DÉFINI') {
+if ($LmLevel -eq 'NON DEFINI') {
     $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Authentification'; Constat='LmCompatibilityLevel absent du registre'; Detail='Valeur par defaut differente entre W10 et W11, peut causer des echecs de partage reseau entre machines mixtes.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 3 -Type DWord' }
 } elseif ([int]$LmLevel -lt 3) {
     $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Authentification'; Constat="LmCompatibilityLevel = $LmLevel (trop bas)"; Detail='Authentification LM/NTLMv1 autorisee. Risque majeur de vol de credentials.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 5 -Type DWord' }
@@ -899,7 +977,12 @@ foreach ($Share in $Shares) {
 
 # LLMNR ACTIVE
 if ($LLMNRVal -ne '0') {
-    $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Protocoles decouverte'; Constat='LLMNR est active'; Detail='LLMNR exploitable pour capturer credentials (outil Responder).'; Correction='Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" -Name EnableMulticast -Value 0' }
+    if (-not $DNSClientExists) {
+        $Correction = "New-Item -Path '$DNSClientParent' -Name 'DNSClient' -Force; New-ItemProperty -Path '$DNSClientPath' -Name EnableMulticast -PropertyType DWORD -Value 0 -Force"
+    } else {
+        $Correction = "Set-ItemProperty -Path '$DNSClientPath' -Name EnableMulticast -Value 0 -Type DWord"
+    }
+    $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Protocoles decouverte'; Constat='LLMNR est active'; Detail='LLMNR exploitable pour capturer credentials (outil Responder).'; Correction=$Correction }
 }
 
 # CONNECTIVITE
@@ -928,14 +1011,14 @@ $ConnTotal     = if ($ConnTests) { @($ConnTests).Count } else { 0 }
 Write-Step "Generation du rapport HTML..."
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REGION: GÉNÉRATION HTML
+# REGION: GENERATION HTML
 # ─────────────────────────────────────────────────────────────────────────────
 function Build-Table {
     param([string]$ID, [array]$Data, [string[]]$Columns, [string]$RiskColumn = 'Risque')
     if (-not $Data -or $Data.Count -eq 0) { return "<p class='no-data'>Aucune donnee disponible</p>" }
     $h  = "<div class='table-wrap'><div class='table-toolbar'>"
     $h += "<input type='text' class='search-input' placeholder='Filtrer...' oninput='filterTable(this, &quot;$ID&quot;)'>"
-    $h += "<button class='export-btn' onclick='exportCSV(&quot;$ID&quot;)'>CSV</button></div>"
+    $h += "<button class='export-btn' onclick='exportCSV(&quot;$ID&quot;)'>CSV</button><button class='export-btn' onclick='exportTXT(&quot;$ID&quot;)'>TXT</button></div>"
     $h += "<table id='$ID' class='data-table'><thead><tr>"
     foreach ($Col in $Columns) { $h += "<th onclick='sortTable(this, &quot;$ID&quot;)'>$Col <span class='sort-arrow'>⇅</span></th>" }
     $h += "</tr></thead><tbody>"
@@ -976,6 +1059,11 @@ $ReportDate  = $ScriptStartTime.ToString("yyyy-MM-dd HH:mm:ss")
 $ModeDisplay = $Mode
 $FileName    = "DiagReseau_${ModeDisplay}_$($env:COMPUTERNAME)_$($ScriptStartTime.ToString('yyyyMMdd_HHmmss')).html"
 $OutputFile  = Join-Path $OutputPath $FileName
+$BaseName    = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
+$AllTxtName  = "$BaseName-all.txt"
+$AllCsvName  = "$BaseName-all.csv"
+$AllTxtFile  = Join-Path $OutputPath $AllTxtName
+$AllCsvFile  = Join-Path $OutputPath $AllCsvName
 
 $SMBSrvHTML  = "<h4>Configuration Serveur SMB</h4>" + (Build-Table -ID 'tbl-smb-srv' -Data $SMBServerItems -Columns @('Parametre','Valeur','Risque','Note'))
 $SMBCliHTML  = "<h4>Configuration Client SMB</h4>"  + (Build-Table -ID 'tbl-smb-cli' -Data $SMBClientItems -Columns @('Parametre','Valeur','Risque','Note'))
@@ -984,6 +1072,8 @@ $SMBShrHTML2 = "<h4>Partages SMB</h4>" +
               (Build-Table -ID 'tbl-shares' -Data $Shares -Columns @('Nom','Chemin','Acces','Dossiers','Risque') -RiskColumn 'Risque')
 $SMBSesHTML  = "<h4>Sessions actives</h4>"           + (Build-Table -ID 'tbl-sessions'-Data $SMBSessions    -Columns @('Client','Utilisateur','Dialecte','Signe','Chiffre','Duree_s'))
 $SMBConHTML  = "<h4>Connexions actives</h4>"         + (Build-Table -ID 'tbl-conn'    -Data $SMBConnections -Columns @('Serveur','Partage','Utilisateur','Dialecte','Signe','Chiffre'))
+
+$RemoteSMBHTML = "<h4>Partages SMB distants / par interface</h4>" + (Build-Table -ID 'tbl-remote-smb' -Data $RemoteSMBShares -Columns @('Source','Type','Serveur','Partage','Interface','LocalIP','Cible','Utilisateur'))
 
 $HistHTML    = "<h4>Evenements acces partage (7 derniers jours - IDs 5140/5142/5143/5144)</h4>" + (Build-Table -ID 'tbl-hist'    -Data $ConnHistory    -Columns @('Horodatage','EventID','TypeEvenemt','Partage','IPSource','Compte'))
 $NetUseHTML  = "<h4>Connexions actives (net use)</h4>" + (if ($NetUseEntries.Count -gt 0) { Build-Table -ID 'tbl-netuse' -Data $NetUseEntries -Columns @('Statut','Local','Distant') } else { "<p class='no-data'>Aucune connexion net use active</p>" })
@@ -1089,6 +1179,8 @@ h4:first-child{margin-top:0}
     <span class="mode-badge mode-$(if($Mode -eq 'COMPLET'){'complet'}else{'public'})">Mode $ModeDisplay</span>
   </div>
   <div class="topbar-right">
+    <a class="topbar-btn" href="./$AllTxtName" download>⬇ TXT global</a>
+    <a class="topbar-btn" href="./$AllCsvName" download>⬇ CSV global</a>
     <button class="topbar-btn" onclick="expandAll()">⊞ Tout deplier</button>
     <button class="topbar-btn" onclick="collapseAll()">⊟ Tout replier</button>
     <button class="topbar-btn" onclick="toggleTheme()">🌓 Theme</button>
@@ -1104,6 +1196,7 @@ h4:first-child{margin-top:0}
   <div class="nav-tab" onclick="scrollToSection('sec-drives')">🗂️ Lecteurs</div>
   <div class="nav-tab" onclick="scrollToSection('sec-history')">🕐 Historique</div>
   <div class="nav-tab" onclick="scrollToSection('sec-smb')">📁 SMB</div>
+  <div class="nav-tab" onclick="scrollToSection('sec-remote-shares')">🌍 Partages distants</div>
   <div class="nav-tab" onclick="scrollToSection('sec-firewall')">🔥 Pare-feu</div>
   <div class="nav-tab" onclick="scrollToSection('sec-auth')">🔐 Auth.</div>
   <div class="nav-tab" onclick="scrollToSection('sec-services')">⚙️ Services</div>
@@ -1181,6 +1274,7 @@ $(Build-Section 'history' 'Historique des connexions reseau' '🕐' ($HistHTML +
 $(Build-Section 'smb' 'Configuration SMB' '📁' ($SMBSrvHTML + $SMBCliHTML + $SMBShrHTML + $SMBSesHTML + $SMBConHTML) "$(@($Shares).Count) partage(s)")
 
 $(Build-Section 'shares' 'Partages SMB' '📂' ($SMBShrHTML2) "$(@($Shares).Count) partage(s)")
+$(Build-Section 'remote-shares' 'Partages SMB distants' '🌍' ($RemoteSMBHTML) "$(@($RemoteSMBShares).Count) partage(s) distants")
 $(Build-Section 'firewall' 'Pare-feu Windows' '🔥' @"
 <h4>Profils</h4>
 $(Build-Table -ID 'tbl-fw-profiles' -Data $FWProfiles -Columns @('Profil','Active','EntreeDefaut','SortieDefaut','LogAutorise','LogBloque','Risque'))
@@ -1234,7 +1328,9 @@ function scrollToSection(id){var el=document.getElementById(id);if(el)el.scrollI
 function sortTable(th,tableId){var table=document.getElementById(tableId),col=Array.from(th.parentNode.children).indexOf(th),rows=Array.from(table.querySelectorAll('tbody tr')),asc=th.dataset.sort!=='asc';rows.sort(function(a,b){var A=(a.cells[col]?a.cells[col].textContent:'').trim(),B=(b.cells[col]?b.cells[col].textContent:'').trim();return asc?A.localeCompare(B,'fr',{numeric:true}):B.localeCompare(A,'fr',{numeric:true})});th.dataset.sort=asc?'asc':'desc';var tbody=table.querySelector('tbody');rows.forEach(r=>tbody.appendChild(r))}
 function filterTable(input,tableId){var filter=input.value.toLowerCase(),rows=document.getElementById(tableId).querySelectorAll('tbody tr');rows.forEach(function(row){row.style.display=row.textContent.toLowerCase().includes(filter)?'':'none'})}
 function globalSearch(val){var filter=val.toLowerCase();document.querySelectorAll('.data-table tbody tr').forEach(function(row){row.style.display=(!filter||row.textContent.toLowerCase().includes(filter))?'':'none'});if(filter)expandAll()}
-function exportCSV(tableId){var table=document.getElementById(tableId);if(!table)return;var rows=table.querySelectorAll('tr'),csv=[];rows.forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td'));csv.push(cells.map(c=>'"'+c.textContent.replace(/"/g,'""').trim()+'"').join(','))});var blob=new Blob(['\uFEFF'+csv.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_$($env:COMPUTERNAME)_$(Get-Date -Format yyyyMMdd).csv';a.click()}
+function getExportText(cell){var clone=cell.cloneNode(true);var arrow=clone.querySelector('.sort-arrow');if(arrow)arrow.remove();var text=clone.textContent.trim();text=text.replace(/✅/g,'').replace(/⚠️/g,'').replace(/❌/g,'').replace(/ℹ️/g,'').replace(/\s{2,}/g,' ').trim();return text}
+function exportCSV(tableId){var table=document.getElementById(tableId);if(!table)return;var rows=table.querySelectorAll('tr'),csv=[];rows.forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td'));csv.push(cells.map(function(c){return '"'+getExportText(c).replace(/"/g,'""')+'"'}).join(','))});var blob=new Blob(['\uFEFF'+csv.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click()}
+function exportTXT(tableId){var table=document.getElementById(tableId);if(!table)return;var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return getExportText(th)});var rows=Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'});var lines=[];rows.forEach(function(row,index){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return getExportText(cell)});var title=cells[0]||('Ligne '+(index+1));var separator='======= '+title+' =======';lines.push(separator);headers.forEach(function(h,i){lines.push(h+': '+(cells[i]||''))});lines.push('')} );if(lines.length>0){lines.pop()}else{lines.push('Aucune donnee disponible')}var blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+new Date().toISOString().slice(0,10)+'.txt';a.click()}
 function filterSections(level,btn){document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(level==='all'){expandAll();return}document.querySelectorAll('.data-table tbody tr').forEach(function(row){var show=false;if(level==='critical'&&row.classList.contains('row-critical'))show=true;if(level==='warn'&&row.classList.contains('row-warn'))show=true;if(level==='ok'&&row.classList.contains('row-ok'))show=true;row.style.display=show?'':'none'});expandAll()}
 function copyReport(){navigator.clipboard.writeText(document.body.innerText).then(function(){alert('Texte du rapport copie dans le presse-papiers.')})}
 window.addEventListener('load',function(){var f=document.getElementById('scoreFill');if(f){var t=f.dataset.target;setTimeout(function(){f.style.width=t+'%'},150)}});
@@ -1243,9 +1339,79 @@ window.addEventListener('load',function(){var f=document.getElementById('scoreFi
 </html>
 "@
 
+$ReportSections = @(
+    [PSCustomObject]@{ Title='Identite'; Data=@($Identity); Columns=@('Hostname','Domaine','OS','Build','Version','Architecture','Uptime','DernierBoot','Utilisateur','SID','EstAdmin','PSVersion','PSEdition') },
+    [PSCustomObject]@{ Title='Interfaces reseau'; Data=$NetInterfaces; Columns=@('Nom','IP','Masque','Passerelle','DNS','MAC','DHCP','MTU','Vitesse','Type','Statut') },
+    [PSCustomObject]@{ Title='Profils reseau'; Data=$NetProfiles; Columns=@('Interface','Nom','Profil','IPv4','IPv6','Risque') },
+    [PSCustomObject]@{ Title='Lecteurs mappes'; Data=$MappedDrives; Columns=@('Lecteur','Cible','Utilise','Libre') },
+    [PSCustomObject]@{ Title='Lecteurs persistants'; Data=$PersistentDrives; Columns=@('Lecteur','Cible','Fournisseur','Utilisateur','Source') },
+    [PSCustomObject]@{ Title='Partages SMB (etendus)'; Data=$SMBShares; Columns=@('Nom','Chemin','Description','Type','Permissions','ABE','Cache_HS','MaxUtilisateurs','Disponibilite') },
+    [PSCustomObject]@{ Title='Sessions SMB actives'; Data=$SMBSessions; Columns=@('Client','Utilisateur','Dialecte','Signe','Chiffre','Duree_s') },
+    [PSCustomObject]@{ Title='Connexions SMB actives'; Data=$SMBConnections; Columns=@('Serveur','Partage','Utilisateur','Dialecte','Signe','Chiffre') },
+    [PSCustomObject]@{ Title='Partages SMB distants'; Data=$RemoteSMBShares; Columns=@('Source','Type','Serveur','Partage','Interface','LocalIP','Cible','Utilisateur') },
+    [PSCustomObject]@{ Title='Historique connectivite'; Data=$ConnHistory; Columns=@('Horodatage','EventID','TypeEvenemt','Partage','IPSource','Compte') },
+    [PSCustomObject]@{ Title='Connexions net use'; Data=$NetUseEntries; Columns=@('Statut','Local','Distant') },
+    [PSCustomObject]@{ Title='Services pare-feu'; Data=$FWProfiles; Columns=@('Profil','Active','EntreeDefaut','SortieDefaut','LogAutorise','LogBloque','Risque') },
+    [PSCustomObject]@{ Title='Regles firewall'; Data=$FWRules; Columns=@('Nom','Direction','Action','Profil','Protocole','Port','Active','Risque') },
+    [PSCustomObject]@{ Title='Politique SMB client'; Data=$SMBClientItems; Columns=@('Parametre','Valeur','Risque','Note') },
+    [PSCustomObject]@{ Title='Politique SMB serveur'; Data=$SMBServerItems; Columns=@('Parametre','Valeur','Risque','Note') },
+    [PSCustomObject]@{ Title='Authentification'; Data=$AuthPolicy; Columns=@('Cle','Valeur','Recommande','Risque','Note') },
+    [PSCustomObject]@{ Title='Comptes locaux'; Data=$LocalAccounts; Columns=@('Nom','Active','DernConnexion','MdpRequis','MdpExpire','SID','Risque') },
+    [PSCustomObject]@{ Title='Entrées credentials'; Data=$CredEntries; Columns=@('Cible','Type') },
+    [PSCustomObject]@{ Title='Services critiques'; Data=$ServicesData; Columns=@('Nom','Libelle','Statut','Demarrage','Risque') },
+    [PSCustomObject]@{ Title='Protocoles de decouverte'; Data=$DiscoveryItems; Columns=@('Protocole','Etat','Risque','Note') },
+    [PSCustomObject]@{ Title='Evenements'; Data=$EventLogs; Columns=@('Horodatage','Journal','EventID','Niveau','Categorie','Source','Message') },
+    [PSCustomObject]@{ Title='Table ARP'; Data=$ArpEntries; Columns=@('IP','MAC','Type') },
+    [PSCustomObject]@{ Title='Hosts'; Data=$HostsEntries; Columns=@('IP','Hostname','Note') },
+    [PSCustomObject]@{ Title='Tests connectivite'; Data=$ConnTests; Columns=@('Cible','Ping','Port445','UNC_IPC','Resultat') },
+    [PSCustomObject]@{ Title='Constats'; Data=$Findings; Columns=@('Severite','Categorie','Constat','Detail','Correction') }
+)
+
+function Export-TableText {
+    param([string]$Title, [array]$Data, [string[]]$Columns)
+    $lines = @()
+    $lines += "======= $Title ======="
+    foreach ($row in $Data) {
+        foreach ($column in $Columns) {
+            $value = if ($row.PSObject.Properties[$column]) { $row.$column } else { '' }
+            $lines += "${column}: $value"
+        }
+        $lines += ''
+    }
+    return $lines
+}
+
+function Export-ReportAllText {
+    $allLines = @()
+    foreach ($section in $ReportSections) {
+        $allLines += Export-TableText -Title $section.Title -Data $section.Data -Columns $section.Columns
+        $allLines += ''
+    }
+    [System.IO.File]::WriteAllLines($AllTxtFile, $allLines, [System.Text.Encoding]::UTF8)
+}
+
+function Export-ReportAllCsv {
+    $rows = @('Section,Row,Field,Value')
+    foreach ($section in $ReportSections) {
+        $rowIndex = 0
+        foreach ($row in $section.Data) {
+            $rowIndex++
+            foreach ($column in $section.Columns) {
+                $value = if ($row.PSObject.Properties[$column]) { $row.$column } else { '' }
+                $escaped = '"' + ($section.Title -replace '"','""') + '",' + $rowIndex + ',"' + ($column -replace '"','""') + '","' + ($value -replace '"','""') + '"'
+                $rows += $escaped
+            }
+        }
+    }
+    [System.IO.File]::WriteAllLines($AllCsvFile, $rows, [System.Text.Encoding]::UTF8)
+}
+
+Export-ReportAllText
+Export-ReportAllCsv
+
 # ─────────────────────────────────────────────────────────────────────────────
 # REGION: EXPORT DU RAPPORT
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 if (-not (Test-Path $OutputPath)) {
     try {
         New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
