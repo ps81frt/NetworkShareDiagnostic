@@ -400,55 +400,71 @@ $SMBClientItems = if ($SMBClientConfig) {
     @([PSCustomObject]@{ Parametre='Erreur'; Valeur='Registre LanmanWorkstation inaccessible ou LongPathsEnabled non actif'; Risque='WARN'; Note='' })
 }
 
-# 7. PARTAGES SMB (parametres etendus)
+# 7 PARTAGES SMB (parametres etendus)
 Write-Step "Collecte des partages SMB (parametres etendus)..."
-$SMBShares = Set-Safe-Get {
-    Get-SmbShare | ForEach-Object {
-        $sName   = $_.Name
-        $perms   = Set-Safe-Get { Get-SmbShareAccess -Name $sName | ForEach-Object { "$($_.AccountName):$($_.AccessRight)" } } @()
-        $sConf   = Set-Safe-Get { Get-SmbShareConfiguration -Name $sName } $null
-        [PSCustomObject]@{
-            Nom             = $sName
-            Chemin          = Set-Safe-String $_.Path
-            Description     = Set-Safe-String $_.Description
-            Type            = if ($_.Special) { 'Systeme' } else { 'Utilisateur' }
-            Permissions     = ($perms -join ' | ')
-            ABE             = if ($sConf) { if($sConf.FolderEnumerationMode -eq 'AccessBased'){'Actif'}else{'Inactif'} } else { 'N/A' }
-            Cache_HS        = if ($sConf) { Set-Safe-String $sConf.CachingMode } else { 'N/A' }
-            MaxUtilisateurs = if ($_.MaximumAllowed -eq $null -or $_.MaximumAllowed -eq [uint32]::MaxValue) { 'Illimite' } else { "$($_.MaximumAllowed)" }
-            Disponibilite   = if ($_.ContinuouslyAvailable) { 'Oui' } else { 'Non' }
+if ($SMBServerAvailable) {
+    $SMBShares = Set-Safe-Get {
+        Get-SmbShare -ErrorAction Stop | ForEach-Object {
+            $sName   = $_.Name
+            $perms   = Set-Safe-Get { Get-SmbShareAccess -Name $sName -ErrorAction Stop | ForEach-Object { "$($_.AccountName):$($_.AccessRight)" } } @()
+            $sConf   = Set-Safe-Get { Get-SmbShareConfiguration -Name $sName -ErrorAction Stop } $null
+            [PSCustomObject]@{
+                Nom             = $sName
+                Chemin          = Set-Safe-String $_.Path
+                Description     = Set-Safe-String $_.Description
+                Type            = if ($_.Special) { 'Systeme' } else { 'Utilisateur' }
+                Permissions     = ($perms -join ' | ')
+                ABE             = if ($sConf) { if ($sConf.FolderEnumerationMode -eq 'AccessBased'){'Actif'}else{'Inactif'} } else { 'N/A' }
+                Cache_HS        = if ($sConf) { Set-Safe-String $sConf.CachingMode } else { 'N/A' }
+                MaxUtilisateurs = if ($_.MaximumAllowed -eq $null -or $_.MaximumAllowed -eq [uint32]::MaxValue) { 'Illimite' } else { "$($_.MaximumAllowed)" }
+                Disponibilite   = if ($_.ContinuouslyAvailable) { 'Oui' } else { 'Non' }
+            }
         }
-    }
-} @()
+    } @()
+} else {
+    $SMBShares = @()
+    Write-Host "  [AVERT.] Collecte des partages SMB annulee : LanmanServer n'est pas demarre." -ForegroundColor Yellow
+}
 
 # 8. SESSIONS SMB ACTIVES
 Write-Step "Collecte des sessions SMB actives..."
-$SMBSessions = Set-Safe-Get {
-    Get-SmbSession | ForEach-Object {
-        [PSCustomObject]@{
-            Client      = if ($Mode -eq 'PUBLIC') { SET-Mask-IP $_.ClientComputerName } else { $_.ClientComputerName }
-            Utilisateur = if ($Mode -eq 'PUBLIC') { ($_.ClientUserName -replace '^[^\\]+\\','***\') } else { $_.ClientUserName }
-            Dialecte    = $_.Dialect
-            Signe       = $_.IsSigned
-            Chiffre     = $_.IsEncrypted
-            Duree_s     = $_.SecondsExists
+if ($SMBServerAvailable) {
+    $SMBSessions = Set-Safe-Get {
+        Get-SmbSession -ErrorAction Stop | ForEach-Object {
+            [PSCustomObject]@{
+                Client      = if ($Mode -eq 'PUBLIC') { SET-Mask-IP $_.ClientComputerName } else { $_.ClientComputerName }
+                Utilisateur = if ($Mode -eq 'PUBLIC') { ($_.ClientUserName -replace '^[^\\]+\\','***\') } else { $_.ClientUserName }
+                Dialecte    = $_.Dialect
+                Signe       = $_.IsSigned
+                Chiffre     = $_.IsEncrypted
+                Duree_s     = $_.SecondsExists
+            }
         }
-    }
-} @()
+    } @()
+} else {
+    $SMBSessions = @()
+    Write-Host "  [AVERT.] Collecte des sessions SMB annulee : LanmanServer n'est pas demarre." -ForegroundColor Yellow
+}
 
 # 9. CONNEXIONS SMB ACTIVES
-$SMBConnections = Set-Safe-Get {
-    Get-SmbConnection | ForEach-Object {
-        [PSCustomObject]@{
-            Serveur     = if ($Mode -eq 'PUBLIC') { Set-Mask-Host $_.ServerName } else { $_.ServerName }
-            Partage     = if ($Mode -eq 'PUBLIC') { ($_.ShareName -replace '(?<=\\).*','***') } else { $_.ShareName }
-            Dialecte    = $_.Dialect
-            Signe       = $_.IsSigned
-            Chiffre     = $_.IsEncrypted
-            Utilisateur = if ($Mode -eq 'PUBLIC') { '***' } else { $_.UserName }
+Write-Step "Collecte des connexions SMB actives..."
+if ($SMBClientAvailable) {
+    $SMBConnections = Set-Safe-Get {
+        Get-SmbConnection -ErrorAction Stop | ForEach-Object {
+            [PSCustomObject]@{
+                Serveur     = if ($Mode -eq 'PUBLIC') { Set-Mask-Host $_.ServerName } else { $_.ServerName }
+                Partage     = if ($Mode -eq 'PUBLIC') { ($_.ShareName -replace '(?<=\\).*','***') } else { $_.ShareName }
+                Dialecte    = $_.Dialect
+                Signe       = $_.IsSigned
+                Chiffre     = $_.IsEncrypted
+                Utilisateur = if ($Mode -eq 'PUBLIC') { '***' } else { $_.UserName }
+            }
         }
-    }
-} @()
+    } @()
+} else {
+    $SMBConnections = @()
+    Write-Host "  [AVERT.] Collecte des connexions SMB annulee : LanmanWorkstation n'est pas demarre." -ForegroundColor Yellow
+}
 
 function Set-Parse-UNCPath { # modified
     param([string]$Path)
@@ -667,7 +683,12 @@ $CredEntries = if ($CredmanOutput) {
     }
 } else { @() }
 
-# 13. SERVICES & PROTOCOLES DE DECOUVERTE
+# 13.0 VERIFICATION DE LA DISPONIBILITE DES SERVICES SMB
+
+$SMBServerAvailable = (Get-Service -Name LanmanServer -ErrorAction SilentlyContinue).Status -eq 'Running'
+$SMBClientAvailable = (Get-Service -Name LanmanWorkstation -ErrorAction SilentlyContinue).Status -eq 'Running'
+
+# 13.1. SERVICES & PROTOCOLES DE DECOUVERTE
 Write-Step "Collecte des services et protocoles de decouverte..."
 $CriticalServices = @(
     @{Name='LanmanServer';    Friendly='Serveur SMB (LanmanServer)';             Risk='CRITICAL'}
@@ -716,6 +737,7 @@ $DiscoveryItems = @(
     [PSCustomObject]@{ Protocole='mDNS';               Etat='Active (defaut)'; Risque='INFO'; Note='DNS multicast - protocole Bonjour' }
     [PSCustomObject]@{ Protocole='WSD (Web Services)'; Etat=if((Set-Safe-Get{(Get-Service FDResPub).Status}'Stopped') -eq 'Running'){'En cours'}else{'Arrete'}; Risque='INFO'; Note='Publication decouverte reseau' }
 )
+
 
 # 14. JOURNAL D'EVENEMENTS — 24H
 Write-Step "Collecte des evenements (24 dernieres heures)..."
@@ -847,30 +869,34 @@ foreach ($Target in $Neighbors) {
 
 # 18. PARTAGES SMB
 Write-Step "Collecte des partages SMB..."
+if ($SMBServerAvailable) {
+    $Shares = Set-Safe-Get {
+        Get-SmbShare -ErrorAction Stop | ForEach-Object {
+            $ShareName = $_.Name
+            $Path      = $_.Path
 
-$Shares = Set-Safe-Get {
-    Get-SmbShare | ForEach-Object {
-        $ShareName = $_.Name
-        $Path      = $_.Path
+            $Permissions = Get-SmbShareAccess -Name $ShareName -ErrorAction SilentlyContinue
 
-        $Permissions = Get-SmbShareAccess -Name $ShareName -ErrorAction SilentlyContinue
+            $Folders = if (Test-Path $Path) {
+                Get-ChildItem -Path $Path -Directory -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty Name
+            } else { @() }
 
-        $Folders = if (Test-Path $Path) {
-            Get-ChildItem -Path $Path -Directory -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty Name
-        } else { @() }
-
-        [PSCustomObject]@{
-            Nom        = if ($Mode -eq 'PUBLIC') { ($ShareName.Substring(0,[Math]::Min(3,$ShareName.Length))+'***') } else { $ShareName }
-            Chemin     = $Path
-            Acces      = ($Permissions | ForEach-Object {
-                "$($_.AccountName) ($($_.AccessRight))"
-            }) -join "; "
-            Dossiers   = if ($Folders) { $Folders -join ", " } else { "Aucun / inaccessible" }
-            Risque     = if ($Permissions.AccountName -match 'Everyone') { 'WARN' } else { 'OK' }
+            [PSCustomObject]@{
+                Nom        = if ($Mode -eq 'PUBLIC') { ($ShareName.Substring(0,[Math]::Min(3,$ShareName.Length))+'***') } else { $ShareName }
+                Chemin     = $Path
+                Acces      = ($Permissions | ForEach-Object {
+                    "$($_.AccountName) ($($_.AccessRight))"
+                }) -join "; "
+                Dossiers   = if ($Folders) { $Folders -join ", " } else { "Aucun / inaccessible" }
+                Risque     = if ($Permissions.AccountName -match 'Everyone') { 'WARN' } else { 'OK' }
+            }
         }
-    }
-} @()
+    } @()
+} else {
+    $Shares = @()
+    Write-Host "  [AVERT.] Collecte des partages SMB annulee : LanmanServer n'est pas demarre." -ForegroundColor Yellow
+}
 
 # Fallback si aucun voisin detecte
 if (-not $ConnTests -or $ConnTests.Count -eq 0) {
@@ -945,7 +971,23 @@ foreach ($FWP in $FWProfiles) {
 # SERVICES CRITICAL ARRETES
 foreach ($Svc in $ServicesData) {
     if ($Svc.Statut -ne 'Running' -and $Svc.Risque -eq 'CRITICAL') {
-        $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Services'; Constat="Service ARRETE : $($Svc.Libelle)"; Detail="$($Svc.Nom) doit etre actif pour le partage SMB."; Correction="Start-Service -Name $($Svc.Nom)" }
+        if ($Svc.Demarrage -eq 'Disabled') {
+            $Findings += [PSCustomObject]@{
+                Severite  = 'CRITICAL'
+                Categorie = 'Services'
+                Constat   = "Service DESACTIVE : $($Svc.Libelle)"
+                Detail    = "$($Svc.Nom) est desactive et ne peut pas demarrer sans changer son type de demarrage."
+                Correction= "Set-Service -Name $($Svc.Nom) -StartupType Automatic; Start-Service -Name $($Svc.Nom)"
+            }
+        } else {
+            $Findings += [PSCustomObject]@{
+                Severite  = 'CRITICAL'
+                Categorie = 'Services'
+                Constat   = "Service ARRETE : $($Svc.Libelle)"
+                Detail    = "$($Svc.Nom) doit etre actif pour le partage SMB."
+                Correction= "Start-Service -Name $($Svc.Nom)"
+            }
+        }
     }
 }
 
