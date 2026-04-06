@@ -1055,6 +1055,7 @@ Write-Step "Generation du rapport HTML..."
 # ─────────────────────────────────────────────────────────────────────────────
 # REGION: GENERATION HTML
 # ─────────────────────────────────────────────────────────────────────────────
+
 function Build-Table {
     param([string]$ID, [array]$Data, [string[]]$Columns, [string]$RiskColumn = 'Risque')
     if (-not $Data -or $Data.Count -eq 0) { return "<p class='no-data'>Aucune donnee disponible</p>" }
@@ -1102,10 +1103,6 @@ $ModeDisplay = $Mode
 $FileName    = "DiagReseau_${ModeDisplay}_$($env:COMPUTERNAME)_$($ScriptStartTime.ToString('yyyyMMdd_HHmmss')).html"
 $OutputFile  = Join-Path $OutputPath $FileName
 $BaseName    = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
-$AllTxtName  = "$BaseName-all.txt"
-$AllCsvName  = "$BaseName-all.csv"
-$AllTxtFile  = Join-Path $OutputPath $AllTxtName
-$AllCsvFile  = Join-Path $OutputPath $AllCsvName
 
 $SMBSrvHTML  = "<h4>Configuration Serveur SMB</h4>" + (Build-Table -ID 'tbl-smb-srv' -Data $SMBServerItems -Columns @('Parametre','Valeur','Risque','Note'))
 $SMBCliHTML  = "<h4>Configuration Client SMB</h4>"  + (Build-Table -ID 'tbl-smb-cli' -Data $SMBClientItems -Columns @('Parametre','Valeur','Risque','Note'))
@@ -1221,8 +1218,8 @@ h4:first-child{margin-top:0}
     <span class="mode-badge mode-$(if($Mode -eq 'COMPLET'){'complet'}else{'public'})">Mode $ModeDisplay</span>
   </div>
   <div class="topbar-right">
-    <a class="topbar-btn" href="./$AllTxtName" download>⬇ TXT global</a>
-    <a class="topbar-btn" href="./$AllCsvName" download>⬇ CSV global</a>
+    <button class="topbar-btn" onclick="exportAllTXT()">⬇ TXT global</button>
+    <button class="topbar-btn" onclick="exportAllCSV()">⬇ CSV global</button>
     <button class="topbar-btn" onclick="expandAll()">⊞ Tout deplier</button>
     <button class="topbar-btn" onclick="collapseAll()">⊟ Tout replier</button>
     <button class="topbar-btn" onclick="toggleTheme()">🌓 Theme</button>
@@ -1359,24 +1356,26 @@ $(Build-Section 'findings' 'Constats et Recommandations' '⚠️' (Build-Table -
   Genere le $ReportDate — Hote : $($Identity.Hostname) — Mode : $ModeDisplay — PS : $($Identity.PSVersion)<br>
   Scan en lecture seule. Aucune modification systeme effectuee.
 </div>
-
-<script>
-function toggleTheme(){document.body.classList.toggle('light');localStorage.setItem('theme',document.body.classList.contains('light')?'light':'dark')}
-if(localStorage.getItem('theme')==='light')document.body.classList.add('light');
-function toggleSection(id){var b=document.getElementById('body-'+id),t=document.getElementById('tog-'+id);b.classList.toggle('hidden');t.classList.toggle('collapsed')}
-function expandAll(){document.querySelectorAll('.section-body').forEach(b=>b.classList.remove('hidden'));document.querySelectorAll('.section-toggle').forEach(t=>t.classList.remove('collapsed'))}
-function collapseAll(){document.querySelectorAll('.section-body').forEach(b=>b.classList.add('hidden'));document.querySelectorAll('.section-toggle').forEach(t=>t.classList.add('collapsed'))}
-function scrollToSection(id){var el=document.getElementById(id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));event.target.classList.add('active')}
-function sortTable(th,tableId){var table=document.getElementById(tableId),col=Array.from(th.parentNode.children).indexOf(th),rows=Array.from(table.querySelectorAll('tbody tr')),asc=th.dataset.sort!=='asc';rows.sort(function(a,b){var A=(a.cells[col]?a.cells[col].textContent:'').trim(),B=(b.cells[col]?b.cells[col].textContent:'').trim();return asc?A.localeCompare(B,'fr',{numeric:true}):B.localeCompare(A,'fr',{numeric:true})});th.dataset.sort=asc?'asc':'desc';var tbody=table.querySelector('tbody');rows.forEach(r=>tbody.appendChild(r))}
-function filterTable(input,tableId){var filter=input.value.toLowerCase(),rows=document.getElementById(tableId).querySelectorAll('tbody tr');rows.forEach(function(row){row.style.display=row.textContent.toLowerCase().includes(filter)?'':'none'})}
-function globalSearch(val){var filter=val.toLowerCase();document.querySelectorAll('.data-table tbody tr').forEach(function(row){row.style.display=(!filter||row.textContent.toLowerCase().includes(filter))?'':'none'});if(filter)expandAll()}
-function getExportText(cell){var clone=cell.cloneNode(true);var arrow=clone.querySelector('.sort-arrow');if(arrow)arrow.remove();var text=clone.textContent.trim();text=text.replace(/✅/g,'').replace(/⚠️/g,'').replace(/❌/g,'').replace(/ℹ️/g,'').replace(/\s{2,}/g,' ').trim();return text}
-function exportCSV(tableId){var table=document.getElementById(tableId);if(!table)return;var rows=table.querySelectorAll('tr'),csv=[];rows.forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td'));csv.push(cells.map(function(c){return '"'+getExportText(c).replace(/"/g,'""')+'"'}).join(','))});var blob=new Blob(['\uFEFF'+csv.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click()}
-function exportTXT(tableId){var table=document.getElementById(tableId);if(!table)return;var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return getExportText(th)});var rows=Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'});var lines=[];rows.forEach(function(row,index){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return getExportText(cell)});var title=cells[0]||('Ligne '+(index+1));var separator='======= '+title+' =======';lines.push(separator);headers.forEach(function(h,i){lines.push(h+': '+(cells[i]||''))});lines.push('')} );if(lines.length>0){lines.pop()}else{lines.push('Aucune donnee disponible')}var blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+new Date().toISOString().slice(0,10)+'.txt';a.click()}
-function filterSections(level,btn){document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(level==='all'){expandAll();return}document.querySelectorAll('.data-table tbody tr').forEach(function(row){var show=false;if(level==='critical'&&row.classList.contains('row-critical'))show=true;if(level==='warn'&&row.classList.contains('row-warn'))show=true;if(level==='ok'&&row.classList.contains('row-ok'))show=true;row.style.display=show?'':'none'});expandAll()}
-function copyReport(){navigator.clipboard.writeText(document.body.innerText).then(function(){alert('Texte du rapport copie dans le presse-papiers.')})}
-window.addEventListener('load',function(){var f=document.getElementById('scoreFill');if(f){var t=f.dataset.target;setTimeout(function(){f.style.width=t+'%'},150)}});
-</script>
+    <script>
+        function toggleTheme(){document.body.classList.toggle('light');localStorage.setItem('theme',document.body.classList.contains('light')?'light':'dark')}
+        if(localStorage.getItem('theme')==='light')document.body.classList.add('light');
+        function toggleSection(id){var b=document.getElementById('body-'+id),t=document.getElementById('tog-'+id);b.classList.toggle('hidden');t.classList.toggle('collapsed')}
+        function expandAll(){document.querySelectorAll('.section-body').forEach(b=>b.classList.remove('hidden'));document.querySelectorAll('.section-toggle').forEach(t=>t.classList.remove('collapsed'))}
+        function collapseAll(){document.querySelectorAll('.section-body').forEach(b=>b.classList.add('hidden'));document.querySelectorAll('.section-toggle').forEach(t=>t.classList.add('collapsed'))}
+        function scrollToSection(id){var el=document.getElementById(id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));event.target.classList.add('active')}
+        function sortTable(th,tableId){var table=document.getElementById(tableId),col=Array.from(th.parentNode.children).indexOf(th),rows=Array.from(table.querySelectorAll('tbody tr')),asc=th.dataset.sort!=='asc';rows.sort(function(a,b){var A=(a.cells[col]?a.cells[col].textContent:'').trim(),B=(b.cells[col]?b.cells[col].textContent:'').trim();return asc?A.localeCompare(B,'fr',{numeric:true}):B.localeCompare(A,'fr',{numeric:true})});th.dataset.sort=asc?'asc':'desc';var tbody=table.querySelector('tbody');rows.forEach(r=>tbody.appendChild(r))}
+        function filterTable(input,tableId){var filter=input.value.toLowerCase(),rows=document.getElementById(tableId).querySelectorAll('tbody tr');rows.forEach(function(row){row.style.display=row.textContent.toLowerCase().includes(filter)?'':'none'})}
+        function globalSearch(val){var filter=val.toLowerCase();document.querySelectorAll('.data-table tbody tr').forEach(function(row){row.style.display=(!filter||row.textContent.toLowerCase().includes(filter))?'':'none'});if(filter)expandAll()}
+        function getExportText(cell){var clone=cell.cloneNode(true);var arrow=clone.querySelector('.sort-arrow');if(arrow)arrow.remove();var text=clone.textContent.trim();text=text.replace(/✅/g,'').replace(/⚠️/g,'').replace(/❌/g,'').replace(/ℹ️/g,'').replace(/\s{2,}/g,' ').trim();return text}
+        function formatDateTime(){var d=new Date();return d.getFullYear().toString()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2)+'_'+d.getHours()+'h'+d.getMinutes()+'m'+d.getSeconds()+'s'}
+        function exportCSV(tableId){var table=document.getElementById(tableId);if(!table)return;var rows=table.querySelectorAll('tr'),csv=[];rows.forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td'));csv.push(cells.map(function(c){return '"'+getExportText(c).replace(/"/g,'""')+'"'}).join(','))});var blob=new Blob(['\uFEFF'+csv.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+formatDateTime()+'.csv';a.click()}
+        function exportTXT(tableId){var table=document.getElementById(tableId);if(!table)return;var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return getExportText(th)});var rows=Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'});var lines=[];rows.forEach(function(row,index){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return getExportText(cell)});var title=cells[0]||('Ligne '+(index+1));var separator='======= '+title+' =======';lines.push(separator);headers.forEach(function(h,i){lines.push(h+': '+(cells[i]||''))});lines.push('')} );if(lines.length>0){lines.pop()}else{lines.push('Aucune donnee disponible')}var blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+formatDateTime()+'.txt';a.click()}
+        function exportAllTXT(){var lines=[];document.querySelectorAll('.data-table').forEach(function(table){var title=table.id||'report';lines.push('======= '+title+' =======');var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return getExportText(th)});var rows=Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'});rows.forEach(function(row,index){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return getExportText(cell)});var separator='======= Ligne '+(index+1)+' =======';lines.push(separator);headers.forEach(function(h,i){lines.push(h+': '+(cells[i]||''))});lines.push('')})});if(lines.length===0){lines.push('Aucune donnee disponible')}var blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='report-all-'+formatDateTime()+'.txt';a.click()}
+        function exportAllCSV(){var rows=[];document.querySelectorAll('.data-table').forEach(function(table){var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return '"'+getExportText(th).replace(/"/g,'""')+'"'});rows.push(headers.join(','));Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'}).forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return '"'+getExportText(cell).replace(/"/g,'""')+'"'});rows.push(cells.join(','))})});if(rows.length===0){rows.push('"Aucune donnee disponible"')}var blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='report-all-'+formatDateTime()+'.csv';a.click()}
+        function filterSections(level,btn){document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(level==='all'){expandAll();return}document.querySelectorAll('.data-table tbody tr').forEach(function(row){var show=false;if(level==='critical'&&row.classList.contains('row-critical'))show=true;if(level==='warn'&&row.classList.contains('row-warn'))show=true;if(level==='ok'&&row.classList.contains('row-ok'))show=true;row.style.display=show?'':'none'});expandAll()}
+        function copyReport(){navigator.clipboard.writeText(document.body.innerText).then(function(){alert('Texte du rapport copie dans le presse-papiers.')})}
+        window.addEventListener('load',function(){var f=document.getElementById('scoreFill');if(f){var t=f.dataset.target;setTimeout(function(){f.style.width=t+'%'},150)}});
+    </script>
 </body>
 </html>
 "@
@@ -1423,8 +1422,23 @@ function Export-TableText {
     return $lines
 }
 
+function Export-TableText {
+    param([string]$Title, [array]$Data, [string[]]$Columns)
+    $lines = @()
+    $lines += "======= $Title ======="
+    foreach ($row in $Data) {
+        foreach ($column in $Columns) {
+            $value = if ($row.PSObject.Properties[$column]) { $row.$column } else { '' }
+            $lines += "${column}: $value"
+        }
+        $lines += ''
+    }
+    return $lines
+}
+
 function Export-ReportAllText {
     $allLines = @()
+    $AllTxtFile = Join-Path $OutputPath "$BaseName-all.txt"
     foreach ($section in $ReportSections) {
         $allLines += Export-TableText -Title $section.Title -Data $section.Data -Columns $section.Columns
         $allLines += ''
@@ -1434,6 +1448,7 @@ function Export-ReportAllText {
 
 function Export-ReportAllCsv {
     $rows = @('Section,Row,Field,Value')
+    $AllCsvFile = Join-Path $OutputPath "$BaseName-all.csv"
     foreach ($section in $ReportSections) {
         $rowIndex = 0
         foreach ($row in $section.Data) {
@@ -1448,12 +1463,9 @@ function Export-ReportAllCsv {
     [System.IO.File]::WriteAllLines($AllCsvFile, $rows, [System.Text.Encoding]::UTF8)
 }
 
-Export-ReportAllText
-Export-ReportAllCsv
-
 # ─────────────────────────────────────────────────────────────────────────────
 # REGION: EXPORT DU RAPPORT
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 if (-not (Test-Path $OutputPath)) {
     try {
         New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
@@ -1468,7 +1480,9 @@ try {
     [System.IO.File]::WriteAllText($OutputFile, $HTML, [System.Text.Encoding]::UTF8)
 } catch {
     Write-Host "[ERREUR] Impossible d'ecrire le rapport : $($_.Exception.Message)" -ForegroundColor Red
-    $OutputFile = Join-Path $env:TEMP $FileName
+    $OutputPath = $env:TEMP
+    $OutputFile = Join-Path $OutputPath $FileName
+
     try {
         [System.IO.File]::WriteAllText($OutputFile, $HTML, [System.Text.Encoding]::UTF8)
         Write-Host "[INFO] Rapport ecrit dans le dossier temporaire : $OutputFile" -ForegroundColor Yellow
@@ -1493,4 +1507,9 @@ Write-Host ""
 Write-Host "  Ouverture du rapport dans le navigateur par defaut..." -ForegroundColor Gray
 Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Cyan
 
-Start-Process $OutputFile
+try {
+    Start-Process -FilePath $OutputFile -ErrorAction Stop
+} catch {
+    Write-Host "[ERREUR] Impossible d'ouvrir le rapport : $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "         Ouvrez manuellement : $OutputFile" -ForegroundColor Yellow
+}
