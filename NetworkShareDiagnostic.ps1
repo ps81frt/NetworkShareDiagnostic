@@ -31,13 +31,22 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$false)]
     [ValidateSet('COMPLET','PUBLIC')]
     [string]$Mode,
 
-    [Parameter(Mandatory=$false)]
-    [string]$OutputPath = "C:\Temp"
+    [string]$OutputPath = "C:\Temp",
+
+    [switch]$EnableDebug
 )
+
+$DebugEnabled = $EnableDebug.IsPresent
+
+function Write-DebugHost {
+    param([string]$Message, [ConsoleColor]$Color = [ConsoleColor]::Gray)
+    if ($DebugEnabled) {
+        Write-Host $Message -ForegroundColor $Color
+    }
+}
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'SilentlyContinue'
@@ -121,8 +130,23 @@ Write-Host ""
 $ScriptStartTime = Get-Date
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DEBUG: MODE ET CHEMIN DE SORTIE
+# ─────────────────────────────────────────────────────────────────────────────
+
+$EnableDebug = $Debug.IsPresent
+function Write-DebugHost {
+    param(
+        [string]$Message,
+        [ConsoleColor]$Color = [ConsoleColor]::Gray
+    )
+    if ($EnableDebug) {
+        Write-Host $Message -ForegroundColor $Color
+    }
+}
+# ─────────────────────────────────────────────────────────────────────────────
 # REGION: FONCTIONS UTILITAIRES
 # ─────────────────────────────────────────────────────────────────────────────
+
 function SET-Mask-IP {
     param([string]$IP)
     if ($Mode -eq 'PUBLIC' -and $IP -match '^\d+\.\d+\.\d+\.\d+$') {
@@ -390,7 +414,7 @@ $SMBClientItems = if ($SMBClientConfig) {
         [PSCustomObject]@{ Parametre='Signature requise (Client)';  Valeur=if($SMBClientConfig.RequireSecuritySignature){'Requise'}else{'Non requise'}; Risque=if($SMBClientConfig.RequireSecuritySignature){'OK'}else{'WARN'}; Note="Application cote client$sourceNote" }
         [PSCustomObject]@{ Parametre='Signature activee (Client)';  Valeur=if($SMBClientConfig.EnableSecuritySignature){'Activee'}else{'Desactivee'}; Risque=if($SMBClientConfig.EnableSecuritySignature){'OK'}else{'WARN'}; Note=$sourceNote.Trim() }
         [PSCustomObject]@{ Parametre='Protocole Max (Client)';      Valeur=Set-Safe-String $SMBClientConfig.MaxProtocol 'N/A';      Risque='INFO'; Note='' }
-        [PSCustomObject]@{ Parametre='Protocole Min (Client)';      Valeur=Set-Safe-reString $SMBClientConfig.MinProtocol 'N/A';      Risque=if((Set-Safe-String $SMBClientConfig.MinProtocol 'N/A') -eq 'SMB1'){'CRITICAL'}else{'OK'}; Note='' }
+        [PSCustomObject]@{ Parametre='Protocole Min (Client)';      Valeur=Set-Safe-String $SMBClientConfig.MinProtocol 'N/A';      Risque=if((Set-Safe-String $SMBClientConfig.MinProtocol 'N/A') -eq 'SMB1'){'CRITICAL'}else{'OK'}; Note='' }
         [PSCustomObject]@{ Parametre='Delai session (s)';           Valeur=Set-Safe-String $SMBClientConfig.SessionTimeout 'N/A';   Risque='INFO'; Note='' }
         [PSCustomObject]@{ Parametre='Duree cache repertoire (s)';  Valeur=Set-Safe-String $SMBClientConfig.DirectoryCacheLifetime 'N/A'; Risque='INFO'; Note='' }
         [PSCustomObject]@{ Parametre='Cache entrees fichier (s)';   Valeur=Set-Safe-String $SMBClientConfig.FileInfoCacheLifetime 'N/A'; Risque='INFO'; Note='' }
@@ -400,47 +424,113 @@ $SMBClientItems = if ($SMBClientConfig) {
     @([PSCustomObject]@{ Parametre='Erreur'; Valeur='Registre LanmanWorkstation inaccessible ou LongPathsEnabled non actif'; Risque='WARN'; Note='' })
 }
 
+# 6.1 VERIFICATION DE LA DISPONIBILITE DES SERVICES SMB
+
+$SMBServerAvailable = (Get-Service -Name LanmanServer -ErrorAction SilentlyContinue).Status -eq 'Running'
+$SMBClientAvailable = (Get-Service -Name LanmanWorkstation -ErrorAction SilentlyContinue).Status -eq 'Running'
+
 # 7 PARTAGES SMB (parametres etendus)
 Write-Step "Collecte des partages SMB (parametres etendus)..."
 if ($SMBServerAvailable) {
-    $SMBShares = Set-Safe-Get {
-        Get-SmbShare -ErrorAction Stop | ForEach-Object {
-            $sName   = $_.Name
-            $perms   = Set-Safe-Get { Get-SmbShareAccess -Name $sName -ErrorAction Stop | ForEach-Object { "$($_.AccountName):$($_.AccessRight)" } } @()
-            $sConf   = Set-Safe-Get { Get-SmbShareConfiguration -Name $sName -ErrorAction Stop } $null
-            [PSCustomObject]@{
-                Nom             = $sName
-                Chemin          = Set-Safe-String $_.Path
-                Description     = Set-Safe-String $_.Description
-                Type            = if ($_.Special) { 'Systeme' } else { 'Utilisateur' }
-                Permissions     = ($perms -join ' | ')
-                ABE             = if ($sConf) { if ($sConf.FolderEnumerationMode -eq 'AccessBased'){'Actif'}else{'Inactif'} } else { 'N/A' }
-                Cache_HS        = if ($sConf) { Set-Safe-String $sConf.CachingMode } else { 'N/A' }
-                MaxUtilisateurs = if ($_.MaximumAllowed -eq $null -or $_.MaximumAllowed -eq [uint32]::MaxValue) { 'Illimite' } else { "$($_.MaximumAllowed)" }
-                Disponibilite   = if ($_.ContinuouslyAvailable) { 'Oui' } else { 'Non' }
-            }
+    $SMBShares     = @()
+    $SMBSharesTemp = @()
+    $rawShares     = Set-Safe-Get { Get-SmbShare -ErrorAction Stop } @()
+
+    $hasShareConfig = [bool](Get-Command Get-SmbShareConfiguration -ErrorAction SilentlyContinue)
+    if (-not $hasShareConfig) {
+        Write-Host "  [INFO] Get-SmbShareConfiguration absent sur cette version de Windows. ABE/Cache_HS non disponibles." -ForegroundColor Yellow
+    }
+
+    Write-DebugHost "DEBUG: rawShares=$(@($rawShares).Count) hasShareConfig=$hasShareConfig"
+
+    if (-not $rawShares) {
+        Write-Host "  [AVERT.] Aucun partage SMB lu ou Get-SmbShare a echoue." -ForegroundColor Yellow
+    }
+
+    foreach ($share in $rawShares) {
+        $sName = $share.Name
+        Write-DebugHost "DEBUG: traitant share $sName"
+
+        $perms = Set-Safe-Get {
+            Get-SmbShareAccess -Name $sName -ErrorAction Stop |
+            ForEach-Object { "$($_.AccountName):$($_.AccessRight)" }
+        } @()
+
+        $sConf = $null
+        if ($hasShareConfig) {
+            $sConf = Set-Safe-Get { Get-SmbShareConfiguration -Name $sName -ErrorAction Stop } $null
         }
-    } @()
+
+        Write-DebugHost "DEBUG RAW SHARE: Name='$($share.Name)' Path='$($share.Path)'"
+
+        $maxAllowed = if ($share.PSObject.Properties['MaximumAllowed']) { $share.MaximumAllowed } else { [uint32]::MaxValue }
+
+        try {
+            $entry = [PSCustomObject]@{
+                Nom             = $sName
+                Chemin          = Set-Safe-String $share.Path
+                Description     = Set-Safe-String $share.Description
+                Type            = if ($share.Special) { 'Systeme' } else { 'Utilisateur' }
+                Permissions     = ($perms -join ' | ')
+                ABE             = if ($sConf) { if ($sConf.FolderEnumerationMode -eq 'AccessBased') {'Actif'} else {'Inactif'} } else { 'N/A' }
+                Cache_HS        = if ($sConf) { Set-Safe-String $sConf.CachingMode } else { 'N/A' }
+                MaxUtilisateurs = if ($null -eq $maxAllowed -or $maxAllowed -eq [uint32]::MaxValue) { 'Illimite' } else { "$maxAllowed" }
+                Disponibilite   = if ($share.ContinuouslyAvailable) { 'Oui' } else { 'Non' }
+            }
+        } catch {
+            Write-DebugHost "DEBUG: entry creation failed for $sName : $($_.Exception.Message)" -ForegroundColor Red
+            continue
+        }
+
+        Write-DebugHost "DEBUG ENTRY TYPE: $($entry.GetType().FullName)"
+        Write-DebugHost "DEBUG ENTRY PROPS: $($entry.PSObject.Properties.Name -join ', ')"
+        Write-DebugHost "DEBUG ENTRY VALUES: $($entry.Nom) | $($entry.Chemin) | $($entry.Permissions)"
+
+        $SMBSharesTemp += $entry
+        Write-DebugHost "DEBUG: added $sName, tempCount=$($SMBSharesTemp.Count)"
+    }
+
+    $SMBShares = $SMBSharesTemp
+    Write-DebugHost "DEBUG: firstShare=$($SMBShares[0].Nom) path=$($SMBShares[0].Chemin)"
 } else {
     $SMBShares = @()
     Write-Host "  [AVERT.] Collecte des partages SMB annulee : LanmanServer n'est pas demarre." -ForegroundColor Yellow
 }
 
+
+# DEBUG : Affichage du nombre d'objets collectes pour SMB (pour aider a identifier les erreurs d'acces aux cmdlets)
+Write-DebugHost "DEBUG: SMBShares=$(@($SMBShares).Count) SMBSessions=$(@($SMBSessions).Count) SMBConnections=$(@($SMBConnections).Count)"
+
 # 8. SESSIONS SMB ACTIVES
 Write-Step "Collecte des sessions SMB actives..."
 if ($SMBServerAvailable) {
-    $SMBSessions = Set-Safe-Get {
-        Get-SmbSession -ErrorAction Stop | ForEach-Object {
-            [PSCustomObject]@{
-                Client      = if ($Mode -eq 'PUBLIC') { SET-Mask-IP $_.ClientComputerName } else { $_.ClientComputerName }
-                Utilisateur = if ($Mode -eq 'PUBLIC') { ($_.ClientUserName -replace '^[^\\]+\\','***\') } else { $_.ClientUserName }
-                Dialecte    = $_.Dialect
-                Signe       = $_.IsSigned
-                Chiffre     = $_.IsEncrypted
-                Duree_s     = $_.SecondsExists
+    $SMBSessions = @()
+    try {
+        $rawSessions = Get-SmbSession -ErrorAction Stop
+    } catch {
+        Write-DebugHost "DEBUG: Get-SmbSession failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        $rawSessions = @()
+    }
+
+    Write-DebugHost "DEBUG: rawSessions=$(@($rawSessions).Count)"
+
+    if ($rawSessions) {
+        $SMBSessions = foreach ($session in $rawSessions) {
+            try {
+                [PSCustomObject]@{
+                    Client      = if ($Mode -eq 'PUBLIC') { SET-Mask-IP $session.ClientComputerName } else { $session.ClientComputerName }
+                    Utilisateur = if ($Mode -eq 'PUBLIC') { ($session.ClientUserName -replace '^[^\\]+\\','***\') } else { $session.ClientUserName }
+                    Dialecte    = $session.Dialect
+                    Signe       = if ($session.PSObject.Properties['IsSigned'])    { $session.IsSigned }    else { 'N/A' }
+                    Chiffre     = if ($session.PSObject.Properties['IsEncrypted']) { $session.IsEncrypted } else { 'N/A' }
+                    Duree_s     = $session.SecondsExists
+                }
+            } catch {
+                Write-DebugHost "DEBUG: session object failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                continue
             }
         }
-    } @()
+    }
 } else {
     $SMBSessions = @()
     Write-Host "  [AVERT.] Collecte des sessions SMB annulee : LanmanServer n'est pas demarre." -ForegroundColor Yellow
@@ -449,27 +539,45 @@ if ($SMBServerAvailable) {
 # 9. CONNEXIONS SMB ACTIVES
 Write-Step "Collecte des connexions SMB actives..."
 if ($SMBClientAvailable) {
-    $SMBConnections = Set-Safe-Get {
-        Get-SmbConnection -ErrorAction Stop | ForEach-Object {
-            [PSCustomObject]@{
-                Serveur     = if ($Mode -eq 'PUBLIC') { Set-Mask-Host $_.ServerName } else { $_.ServerName }
-                Partage     = if ($Mode -eq 'PUBLIC') { ($_.ShareName -replace '(?<=\\).*','***') } else { $_.ShareName }
-                Dialecte    = $_.Dialect
-                Signe       = $_.IsSigned
-                Chiffre     = $_.IsEncrypted
-                Utilisateur = if ($Mode -eq 'PUBLIC') { '***' } else { $_.UserName }
+    $SMBConnections = @()
+    try {
+        $rawConnections = Get-SmbConnection -ErrorAction Stop
+    } catch {
+        Write-DebugHost "DEBUG: Get-SmbConnection failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        $rawConnections = @()
+    }
+
+    Write-DebugHost "DEBUG: rawConnections=$(@($rawConnections).Count)"
+
+    if ($rawConnections) {
+        $SMBConnections = foreach ($conn in $rawConnections) {
+            try {
+                [PSCustomObject]@{
+                    Serveur     = if ($Mode -eq 'PUBLIC') { Set-Mask-Host $conn.ServerName } else { $conn.ServerName }
+                    Partage     = if ($Mode -eq 'PUBLIC') { ($conn.ShareName -replace '(?<=\\).*','***') } else { $conn.ShareName }
+                    Dialecte    = $conn.Dialect
+                    Signe       = if ($conn.PSObject.Properties['IsSigned'])    { $conn.IsSigned }    else { 'N/A' }
+                    Chiffre     = if ($conn.PSObject.Properties['IsEncrypted']) { $conn.IsEncrypted } else { 'N/A' }
+                    Utilisateur = if ($Mode -eq 'PUBLIC') { '***' } else { $conn.UserName }
+                }
+            } catch {
+                Write-DebugHost "DEBUG: connection object failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                continue
             }
         }
-    } @()
+    }
 } else {
     $SMBConnections = @()
     Write-Host "  [AVERT.] Collecte des connexions SMB annulee : LanmanWorkstation n'est pas demarre." -ForegroundColor Yellow
 }
 
+Write-DebugHost "DEBUG: SMBSessions=$(@($SMBSessions).Count) SMBConnections=$(@($SMBConnections).Count)"
+
+# 9.1 RESOLUTION DES INTERFACES LOCALES POUR LES CONNEXIONS SMB
 function Set-Parse-UNCPath { # modified
     param([string]$Path)
     $result = [PSCustomObject]@{ Serveur='N/A'; Partage='N/A' }
-    if ($Path -match '^\\([^\\]+)\\([^\\]+)') {
+    if ($Path -match '^\\\\([^\\]+)\\([^\\]+)') {
         $result.Serveur = $matches[1]
         $result.Partage = $matches[2]
     }
@@ -541,7 +649,22 @@ $SMBConnections | ForEach-Object {
     }
 }
 
-# 10. HISTORIQUE CONNEXIONS RESEAU
+# 10.0 Vérification de l'audit SMB des partages de fichiers
+$SMBShareAuditStatus = 'Unknown'
+try {
+    $auditOutput = (auditpol /get /subcategory:"Partage de fichiers" 2>$null) -join "`n"
+    foreach ($line in $auditOutput -split "`n") {
+        if ($line -match '^\s*(?:Partage de fichiers|File Share)\s+(.*)$') {
+            $SMBShareAuditStatus = $matches[1].Trim()
+            break
+        }
+    }
+} catch {
+    $SMBShareAuditStatus = 'Inaccessible'
+}
+Write-DebugHost "DEBUG: SMBShareAuditStatus='$SMBShareAuditStatus'"
+
+# 10.1 HISTORIQUE CONNEXIONS RESEAU
 Write-Step "Collecte de l'historique des connexions reseau (7 derniers jours)..."
 $ConnHistory = @()
 try {
@@ -550,7 +673,7 @@ try {
         LogName   = 'Security'
         StartTime = $histStart
         Id        = @(5140, 5142, 5143, 5144)
-    } -MaxEvents 150 -ErrorAction Stop
+    } -MaxEvents 150 -ErrorAction SilentlyContinue
     $ConnHistory = $histEvents | ForEach-Object {
         $msg   = $_.Message
         $ip    = if ($msg -match '(?:Adresse reseau source|Source Address)\s*:\s*(\S+)') { $matches[1] } else { 'N/A' }
@@ -651,8 +774,8 @@ $AuthPolicy = @(
     [PSCustomObject]@{ Cle='LocalAccountTokenFilterPolicy'; Valeur=$LATFP; Recommande='1 (admin distant)'; Risque=if($LATFP-ne'1'){'WARN'}else{'OK'}; Note='Doit etre 1 pour acces distant avec compte local' }
     [PSCustomObject]@{ Cle='NoLMHash';                    Valeur=(Get-RegValue $RegPaths.Lsa 'NoLMHash'); Recommande='1'; Risque=if((Get-RegValue $RegPaths.Lsa 'NoLMHash')-ne'1'){'WARN'}else{'OK'}; Note='Empeche stockage hash LM (vol de credentials)' }
     [PSCustomObject]@{ Cle='EnableLUA (UAC)';             Valeur=(Get-RegValue $RegPaths.Policies 'EnableLUA'); Recommande='1'; Risque=if((Get-RegValue $RegPaths.Policies 'EnableLUA')-eq'0'){'WARN'}else{'OK'}; Note='Etat du Controle de Compte Utilisateur' }
-    [PSCustomObject]@{ Cle='NTLMMinClientSecurity';       Valeur=(Get-RegValue $RegPaths.MSV1_0 'NTLMMinClientSec'); Recommande='537395200'; Risque='INFO'; Note='NTLMv2 + chiffrement 128 bits (flags)' }
-    [PSCustomObject]@{ Cle='NTLMMinServerSecurity';       Valeur=(Get-RegValue $RegPaths.MSV1_0 'NTLMMinServerSec'); Recommande='537395200'; Risque='INFO'; Note='NTLMv2 + chiffrement 128 bits (flags)' }
+    [PSCustomObject]@{ Cle='NTLMMinClientSecurity'; Valeur=(Get-RegValue $RegPaths.MSV1_0 'NTLMMinClientSec'); Recommande='537395200'; Risque= if ([int](Get-RegValue $RegPaths.MSV1_0 'NTLMMinClientSec') -lt 537395200) {'WARN'} else {'OK'}; Note='NTLMv2 activé, compatible W10 mais 537395200 reste recommandé pour le chiffrement 128 bits' }
+    [PSCustomObject]@{ Cle='NTLMMinServerSecurity'; Valeur=(Get-RegValue $RegPaths.MSV1_0 'NTLMMinServerSec'); Recommande='537395200'; Risque= if ([int](Get-RegValue $RegPaths.MSV1_0 'NTLMMinServerSec') -lt 537395200) {'WARN'} else {'OK'}; Note='NTLMv2 activé, compatible W10 mais 537395200 reste recommandé pour le chiffrement 128 bits' }
 )
 
 $LocalAccounts = Set-Safe-Get {
@@ -683,12 +806,9 @@ $CredEntries = if ($CredmanOutput) {
     }
 } else { @() }
 
-# 13.0 VERIFICATION DE LA DISPONIBILITE DES SERVICES SMB
 
-$SMBServerAvailable = (Get-Service -Name LanmanServer -ErrorAction SilentlyContinue).Status -eq 'Running'
-$SMBClientAvailable = (Get-Service -Name LanmanWorkstation -ErrorAction SilentlyContinue).Status -eq 'Running'
 
-# 13.1. SERVICES & PROTOCOLES DE DECOUVERTE
+# 13.SERVICES & PROTOCOLES DE DECOUVERTE
 Write-Step "Collecte des services et protocoles de decouverte..."
 $CriticalServices = @(
     @{Name='LanmanServer';    Friendly='Serveur SMB (LanmanServer)';             Risk='CRITICAL'}
@@ -816,8 +936,15 @@ if (Test-Path $HostsPath) {
 Write-Step "Execution des tests de connectivite..."
 
 $Neighbors = @()
-$ArpEntries | Where-Object { $_.IP -notmatch '^(224\.|255\.|169\.)' -and $_.Type -eq 'dynamic' } | ForEach-Object { $Neighbors += $_.IP }
-$SMBSessions | Where-Object { $_.Client -ne '' } | ForEach-Object { $Neighbors += $_.Client }
+$ArpEntries | Where-Object {
+    $_.Type -eq 'dynamic' -and
+    $_.IP -notmatch '^(224\.|255\.|169\.|fe80:|ff[0-9a-fA-F]*:|::1$)'
+} | ForEach-Object { $Neighbors += $_.IP }
+
+$SMBSessions | Where-Object {
+    $_.Client -and $_.Client -notmatch '^fe80:'
+} | ForEach-Object { $Neighbors += $_.Client }
+
 $Neighbors = $Neighbors | Where-Object { $_ -ne '' } | Sort-Object -Unique | Select-Object -First 10
 
 $ConnTests = @()
@@ -898,6 +1025,12 @@ if ($SMBServerAvailable) {
     Write-Host "  [AVERT.] Collecte des partages SMB annulee : LanmanServer n'est pas demarre." -ForegroundColor Yellow
 }
 
+
+# DEBUG: Affichage des compteurs de donnees collectees
+Write-DebugHost "DEBUG: Shares=$(@($Shares).Count) SMBShares=$(@($SMBShares).Count) SMBSessions=$(@($SMBSessions).Count) SMBConnections=$(@($SMBConnections).Count)"
+Write-DebugHost "DEBUG: SMBServerAvailable=$SMBServerAvailable SMBClientAvailable=$SMBClientAvailable"
+
+
 # Fallback si aucun voisin detecte
 if (-not $ConnTests -or $ConnTests.Count -eq 0) {
     $ConnTests = foreach ($Target in $Neighbors) {
@@ -944,8 +1077,15 @@ if ($LmLevel -eq 'NON DEFINI') {
     $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Authentification'; Constat='LmCompatibilityLevel absent du registre'; Detail='Valeur par defaut differente entre W10 et W11, peut causer des echecs de partage reseau entre machines mixtes.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 3 -Type DWord' }
 } elseif ([int]$LmLevel -lt 3) {
     $Findings += [PSCustomObject]@{ Severite='CRITICAL'; Categorie='Authentification'; Constat="LmCompatibilityLevel = $LmLevel (trop bas)"; Detail='Authentification LM/NTLMv1 autorisee. Risque majeur de vol de credentials.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 5 -Type DWord' }
+} elseif ([int]$LmLevel -lt 5) {
+    $Findings += [PSCustomObject]@{
+        Severite='WARN'
+        Categorie='Authentification'
+        Constat="LmCompatibilityLevel = $LmLevel (trop bas)"
+        Detail='NTLMv2 uniquement recommandé. Valeur 5 est optimale.'
+        Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name LmCompatibilityLevel -Value 5 -Type DWord'
+    }
 }
-
 # RestrictAnonymous
 if ((Get-RegValue $RegPaths.Lsa 'restrictanonymous') -eq '0') {
     $Findings += [PSCustomObject]@{ Severite='WARN'; Categorie='Authentification'; Constat='RestrictAnonymous = 0'; Detail='Enumeration anonyme des partages autorisee.'; Correction='Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name restrictanonymous -Value 1 -Type DWord' }
@@ -1034,6 +1174,151 @@ if ($ConnTests -and $ConnTests.Count -gt 0) {
     }
 }
 
+# AUTRES VERIFICATIONS
+$RestrictNullSessAccess = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' 'RestrictNullSessAccess'
+if ($RestrictNullSessAccess -ne '0') {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'SMB / Sécurité'
+        Constat   = "RestrictNullSessAccess = $RestrictNullSessAccess"
+        Detail    = 'Les sessions nulles sont autorisées côté serveur SMB.'
+        Correction= 'Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name RestrictNullSessAccess -Value 0 -Type DWord -Force'
+    }
+}
+
+$EveryoneIncludesAnonymous = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'everyoneincludesanonymous'
+if ($EveryoneIncludesAnonymous -ne '1') {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'SMB / Sécurité'
+        Constat   = "everyoneincludesanonymous = $EveryoneIncludesAnonymous"
+        Detail    = "Acces anonyme global n'est pas activé, ce qui peut bloquer certains partages Windows légitimes en environnement local"
+        Correction= 'Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name everyoneincludesanonymous -Value 1 -Type DWord -Force'
+    }
+}
+
+$SMB2Feature      = Set-Safe-Get { Get-WindowsOptionalFeature -Online -FeatureName FS-SMB2 -ErrorAction Stop } $null
+$SMBDirectFeature = Set-Safe-Get { Get-WindowsOptionalFeature -Online -FeatureName FS-SMBDIRECT -ErrorAction Stop } $null
+
+if ($SMB2Feature -and $SMB2Feature.State -ne 'Enabled') {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'INFO'
+        Categorie = 'SMB'
+        Constat   = 'Feature FS-SMB2 non activée'
+        Detail    = 'Le support SMB2/SMB3 peut ne pas être entièrement disponible.'
+        Correction= 'Enable-WindowsOptionalFeature -Online -FeatureName FS-SMB2 -NoRestart'
+    }
+}
+
+if ($SMBDirectFeature -and $SMBDirectFeature.State -ne 'Enabled') {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'INFO'
+        Categorie = 'SMB'
+        Constat   = 'Feature FS-SMBDIRECT non activée'
+        Detail    = 'Le support SMB Direct est pas activé.'
+        Correction= 'Enable-WindowsOptionalFeature -Online -FeatureName FS-SMBDIRECT -NoRestart'
+    }
+}
+
+$FWNetworkDiscovery = Set-Safe-Get {
+    Get-NetFirewallRule | Where-Object {
+        $_.DisplayGroup -match 'Network Discovery|Découverte' -and $_.Enabled -eq $false
+    }
+} @()
+if ($FWNetworkDiscovery.Count -gt 0) {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'Pare-feu'
+        Constat   = "Règles de découverte réseau désactivées : $($FWNetworkDiscovery.Count)"
+        Detail    = 'Les règles de découverte réseau doivent être activées pour que la découverte SMB fonctionne correctement.'
+        Correction= 'Get-NetFirewallRule | Where-Object { $_.DisplayGroup -match "Network Discovery|Découverte" } | Set-NetFirewallRule -Enabled True'
+    }
+}
+
+$FWFileAndPrinter = Set-Safe-Get {
+    Get-NetFirewallRule | Where-Object {
+        $_.DisplayGroup -match 'File and Printer Sharing|Partage' -and $_.Enabled -eq $false
+    }
+} @()
+
+if ($FWFileAndPrinter.Count -gt 0) {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'Pare-feu'
+        Constat   = "Règles File and Printer Sharing désactivées : $($FWFileAndPrinter.Count)"
+        Detail    = 'Les règles de partage de fichiers et imprimantes doivent être activées pour SMB.'
+        Correction= 'Get-NetFirewallRule | Where-Object { $_.DisplayGroup -match "File and Printer Sharing|Partage" } | Set-NetFirewallRule -Enabled True'
+    }
+}
+
+$ExistingBlockRules = Set-Safe-Get {
+    Get-NetFirewallRule | Where-Object { $SMBBlockRules -contains $_.DisplayName -and $_.Action -eq 'Block' }
+} @()
+if ($ExistingBlockRules.Count -gt 0) {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'Pare-feu'
+        Constat   = "Règles de blocage SMB détectées : $($ExistingBlockRules.DisplayName -join ', ')"
+        Detail    = 'Des règles de blocage SMB explicites peuvent empêcher les connexions réseau.'
+        Correction= 'Remove-NetFirewallRule -DisplayName "Bloquer SMB entrant 445","Bloquer SMB entrant 139","Bloquer NetBIOS entrant","Bloquer SMB sortant 445","Bloquer SMB sortant 139"'
+    }
+}
+
+$NetBIOSProps = Set-Safe-Get {
+    Get-NetAdapterAdvancedProperty -DisplayName 'NetBIOS over Tcpip' -ErrorAction Stop
+} @()
+$NonDefaultNetBIOS = $NetBIOSProps | Where-Object {
+    $_.DisplayValue -notin 'Default','Par défaut','Default'
+}
+if ($NetBIOSProps.Count -gt 0 -and $NonDefaultNetBIOS.Count -gt 0) {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'INFO'
+        Categorie = 'SMB / Réseau'
+        Constat   = "NetBIOS over Tcpip non en mode Default sur certains adaptateurs"
+        Detail    = 'Pour un comportement standard SMB, NetBIOS devrait être en mode Default si possible.'
+        Correction= 'Get-NetAdapterAdvancedProperty -DisplayName "NetBIOS over Tcpip" | Set-NetAdapterAdvancedProperty -DisplayValue "Default"'
+    }
+}
+
+$NmClient = Get-RegValue $RegPaths.MSV1_0 'NTLMMinClientSec'
+if ($NmClient -ne 'NON DEFINI' -and [int]$NmClient -lt 537395200) {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'Authentification'
+        Constat   = "NTLMMinClientSec = $NmClient"
+        Detail = 'NTLMv2 est activé, mais la valeur est inférieure à la recommandation NTLMv2 + chiffrement 128 bits. Valeur 536870912 compatible W10 mais pas optimale.'
+        Correction= 'Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0 -Name NtlmMinClientSec -Value 537395200 -Type DWord -Force'
+    }
+}
+
+$NmServer = Get-RegValue $RegPaths.MSV1_0 'NTLMMinServerSec'
+if ($NmServer -ne 'NON DEFINI' -and [int]$NmServer -lt 537395200) {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'Authentification'
+        Constat   = "NTLMMinServerSec = $NmServer"
+        Detail = 'NTLMv2 est activé, mais la valeur est inférieure à la recommandation NTLMv2 + chiffrement 128 bits. Valeur 536870912 compatible W10 mais pas optimale.'
+        Correction= 'Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0 -Name NtlmMinServerSec -Value 537395200 -Type DWord -Force'
+    }
+}
+
+$SMBBlockRules = @(
+    'Bloquer SMB entrant 445',
+    'Bloquer SMB entrant 139',
+    'Bloquer NetBIOS entrant',
+    'Bloquer SMB sortant 445',
+    'Bloquer SMB sortant 139'
+)
+
+if ($SMBShareAuditStatus -in @("Pas d'audit", "No auditing")) {
+    $Findings += [PSCustomObject]@{
+        Severite  = 'WARN'
+        Categorie = 'Audit SMB'
+        Constat   = 'Audit des partages de fichiers non activé'
+        Detail    = 'Sans audit SMB actif, les événements 5140/5142/5143/5144 ne sont pas collectés.'
+        Correction= 'auditpol /set /subcategory:"Partage de fichiers" /success:enable /failure:enable'
+    }
+}
 # AUCUN PROBLEME
 if ($Findings.Count -eq 0) {
     $Findings += [PSCustomObject]@{ Severite='OK'; Categorie='General'; Constat='Aucun probleme critique detecte'; Detail='Configuration correcte pour le partage de fichiers en reseau local.'; Correction='N/A' }
@@ -1370,8 +1655,8 @@ $(Build-Section 'findings' 'Constats et Recommandations' '⚠️' (Build-Table -
         function formatDateTime(){var d=new Date();return d.getFullYear().toString()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2)+'_'+d.getHours()+'h'+d.getMinutes()+'m'+d.getSeconds()+'s'}
         function exportCSV(tableId){var table=document.getElementById(tableId);if(!table)return;var rows=table.querySelectorAll('tr'),csv=[];rows.forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td'));csv.push(cells.map(function(c){return '"'+getExportText(c).replace(/"/g,'""')+'"'}).join(','))});var blob=new Blob(['\uFEFF'+csv.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+formatDateTime()+'.csv';a.click()}
         function exportTXT(tableId){var table=document.getElementById(tableId);if(!table)return;var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return getExportText(th)});var rows=Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'});var lines=[];rows.forEach(function(row,index){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return getExportText(cell)});var title=cells[0]||('Ligne '+(index+1));var separator='======= '+title+' =======';lines.push(separator);headers.forEach(function(h,i){lines.push(h+': '+(cells[i]||''))});lines.push('')} );if(lines.length>0){lines.pop()}else{lines.push('Aucune donnee disponible')}var blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tableId+'_'+formatDateTime()+'.txt';a.click()}
-        function exportAllTXT(){var lines=[];document.querySelectorAll('.data-table').forEach(function(table){var title=table.id||'report';lines.push('======= '+title+' =======');var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return getExportText(th)});var rows=Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'});rows.forEach(function(row,index){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return getExportText(cell)});var separator='======= Ligne '+(index+1)+' =======';lines.push(separator);headers.forEach(function(h,i){lines.push(h+': '+(cells[i]||''))});lines.push('')})});if(lines.length===0){lines.push('Aucune donnee disponible')}var blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='report-all-'+formatDateTime()+'.txt';a.click()}
-        function exportAllCSV(){var rows=[];document.querySelectorAll('.data-table').forEach(function(table){var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return '"'+getExportText(th).replace(/"/g,'""')+'"'});rows.push(headers.join(','));Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'}).forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return '"'+getExportText(cell).replace(/"/g,'""')+'"'});rows.push(cells.join(','))})});if(rows.length===0){rows.push('"Aucune donnee disponible"')}var blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='report-all-'+formatDateTime()+'.csv';a.click()}
+        function exportAllTXT(){var lines=[];document.querySelectorAll('.data-table').forEach(function(table){var title=(table.closest('.section')&&table.closest('.section').querySelector('.section-title')?table.closest('.section').querySelector('.section-title').textContent.trim():table.id||'report');lines.push('======= '+title+' =======');var headers=Array.from(table.querySelectorAll('thead th')).map(function(th){return getExportText(th)});Array.from(table.querySelectorAll('tbody tr')).filter(function(row){return row.style.display!=='none'}).forEach(function(row){var cells=Array.from(row.querySelectorAll('th,td')).map(function(cell){return getExportText(cell)});var rowLines=[];headers.forEach(function(h,i){if(cells[i])rowLines.push(h+': '+cells[i])});if(rowLines.length){lines.push(rowLines.join('\r\n'));lines.push('')}});lines.push('')});if(lines.length===0){lines.push('Aucune donnee disponible')}var blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='report-all-'+formatDateTime()+'.txt';a.click()}
+        function exportAllCSV(){var SEP=';',rows=[],now=new Date(),total=0,esc=function(v){return'"'+(v===undefined||v===null?'':String(v).replace(/"/g,'""'))+'"'},fmtDate=function(d){return d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR')},fmtFile=function(d){return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()+'_'+d.getHours()+'-'+d.getMinutes()};document.querySelectorAll('.data-table').forEach(function(t){total+=t.querySelectorAll('tbody tr:not([style*="display: none"])').length});rows.push(['Rapport','Export complet',fmtDate(now),total+' ligne(s)'].join(SEP));document.querySelectorAll('.data-table').forEach(function(t,i){var title=(t.closest('.section')&&t.closest('.section').querySelector('.section-title')?t.closest('.section').querySelector('.section-title').textContent.trim():t.id||'sans_titre')||'section';var headers=Array.from(t.querySelectorAll('thead th')).map(function(th){return esc(th.textContent.trim())});rows.push(esc('['+(i+1)+'] '+title));if(headers.length)rows.push(headers.join(SEP));Array.from(t.querySelectorAll('tbody tr')).filter(function(r){return r.style.display!=='none'}).forEach(function(tr){var cells=Array.from(tr.querySelectorAll('td')).map(function(td){return esc(td.textContent.trim())});rows.push(cells.join(SEP))});if(i<document.querySelectorAll('.data-table').length-1)rows.push('')});if(rows.length===2)rows.push(esc('Aucune donnée'));var blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='export_'+fmtFile(now)+'.csv';a.click()}
         function filterSections(level,btn){document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(level==='all'){expandAll();return}document.querySelectorAll('.data-table tbody tr').forEach(function(row){var show=false;if(level==='critical'&&row.classList.contains('row-critical'))show=true;if(level==='warn'&&row.classList.contains('row-warn'))show=true;if(level==='ok'&&row.classList.contains('row-ok'))show=true;row.style.display=show?'':'none'});expandAll()}
         function copyReport(){navigator.clipboard.writeText(document.body.innerText).then(function(){alert('Texte du rapport copie dans le presse-papiers.')})}
         window.addEventListener('load',function(){var f=document.getElementById('scoreFill');if(f){var t=f.dataset.target;setTimeout(function(){f.style.width=t+'%'},150)}});
@@ -1476,6 +1761,10 @@ if (-not (Test-Path $OutputPath)) {
     }
 }
 
+Write-DebugHost "DEBUG: HTML block created"
+Write-DebugHost "DEBUG: HTML length = $($HTML.Length)"
+Write-DebugHost "DEBUG: HTML variable defined? $([bool](Get-Variable HTML -ErrorAction SilentlyContinue))"
+
 try {
     [System.IO.File]::WriteAllText($OutputFile, $HTML, [System.Text.Encoding]::UTF8)
 } catch {
@@ -1513,3 +1802,4 @@ try {
     Write-Host "[ERREUR] Impossible d'ouvrir le rapport : $($_.Exception.Message)" -ForegroundColor Yellow
     Write-Host "         Ouvrez manuellement : $OutputFile" -ForegroundColor Yellow
 }
+Write-DebugHost "DEBUG: Arrive a la fin du script"
